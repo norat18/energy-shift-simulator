@@ -1,0 +1,1068 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Energy Shift Simulator | Nora's Product Demo</title>
+    <meta name="description" content="Interactive demo showing how smart energy shifting saves money and supports the grid. Built by Nora for Renew Home.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            appearance: none;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #fff;
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        }
+        input[type="range"]::-moz-range-thumb {
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #fff;
+            cursor: pointer;
+            border: none;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        const EnergyShiftSimulator = () => {
+            const [shiftEnabled, setShiftEnabled] = useState(true);
+            const [homeSize, setHomeSize] = useState(1800);
+            const [neighborhoodHomes, setNeighborhoodHomes] = useState(2500);
+            const [currentHour, setCurrentHour] = useState(14);
+            const [isAnimating, setIsAnimating] = useState(false);
+            const [comfortPriority, setComfortPriority] = useState(50);
+            const [selectedRatePlan, setSelectedRatePlan] = useState('tou');
+            const [activeTab, setActiveTab] = useState('overview');
+
+            const [devices, setDevices] = useState({
+                thermostat: { enabled: true, name: 'Smart Thermostat', icon: '🌡️', savings: 45, peakReduction: 1.2 },
+                waterHeater: { enabled: false, name: 'Water Heater', icon: '🚿', savings: 25, peakReduction: 0.8 },
+                evCharger: { enabled: false, name: 'EV Charger', icon: '🚗', savings: 35, peakReduction: 1.5 },
+                battery: { enabled: false, name: 'Home Battery', icon: '🔋', savings: 40, peakReduction: 2.0 },
+                poolPump: { enabled: false, name: 'Pool Pump', icon: '🏊', savings: 15, peakReduction: 0.5 }
+            });
+
+            const toggleDevice = (deviceKey) => {
+                setDevices(prev => ({
+                    ...prev,
+                    [deviceKey]: { ...prev[deviceKey], enabled: !prev[deviceKey].enabled }
+                }));
+            };
+
+            const isPeakHour = (hour) => hour >= 16 && hour <= 21;
+            const isPreCoolHour = (hour) => hour >= 14 && hour < 16;
+
+            const comfortFactor = 0.5 + (comfortPriority / 100);
+            const savingsFactor = 1.5 - (comfortPriority / 100);
+
+            const activeDevices = Object.values(devices).filter(d => d.enabled);
+            const totalDeviceSavings = activeDevices.reduce((sum, d) => sum + d.savings, 0);
+            const totalPeakReduction = activeDevices.reduce((sum, d) => sum + d.peakReduction, 0);
+
+            const getBaselineUsage = (hour) => {
+                if (hour >= 0 && hour < 6) return 0.8;
+                if (hour >= 6 && hour < 9) return 1.2;
+                if (hour >= 9 && hour < 14) return 0.9;
+                if (hour >= 14 && hour < 16) return 1.1;
+                if (hour >= 16 && hour < 21) return 1.8;
+                return 1.0;
+            };
+
+            const getShiftedUsage = (hour) => {
+                const deviceMultiplier = 0.7 + (0.3 * (1 - activeDevices.length / 5));
+                if (hour >= 14 && hour < 16) return 1.1 + (0.5 * savingsFactor);
+                if (hour >= 16 && hour < 21) return 0.4 + (0.4 * comfortFactor) * deviceMultiplier;
+                return getBaselineUsage(hour);
+            };
+
+            const ratePlans = {
+                flat: { name: 'Flat Rate', peak: 0.15, offPeak: 0.15, midPeak: 0.15 },
+                tou: { name: 'Time-of-Use', peak: 0.35, offPeak: 0.08, midPeak: 0.15 },
+                touPlus: { name: 'TOU+ (EV Plan)', peak: 0.42, offPeak: 0.05, midPeak: 0.12 }
+            };
+
+            const currentRate = ratePlans[selectedRatePlan];
+
+            const baseDailySavingsKwh = 4.2 * savingsFactor;
+            const deviceBonus = totalDeviceSavings / 100;
+            const rateSavings = (currentRate.peak - currentRate.offPeak) * baseDailySavingsKwh;
+            const dailySavingsDollars = (rateSavings * (1 + deviceBonus) * (homeSize / 2000)).toFixed(2);
+            const monthlySavings = (dailySavingsDollars * 30).toFixed(0);
+            const yearlySavings = (dailySavingsDollars * 365).toFixed(0);
+
+            const avgShiftPerHome = totalPeakReduction * savingsFactor;
+            const totalGridImpact = (neighborhoodHomes * avgShiftPerHome / 1000).toFixed(1);
+            const homesEquivalent = Math.round(neighborhoodHomes * avgShiftPerHome / 10);
+
+            const calculateResilienceScore = () => {
+                let score = 20;
+                if (devices.thermostat.enabled) score += 15;
+                if (devices.battery.enabled) score += 35;
+                if (devices.waterHeater.enabled) score += 10;
+                if (devices.evCharger.enabled) score += 15;
+                if (selectedRatePlan !== 'flat') score += 5;
+                return Math.min(score, 100);
+            };
+
+            const resilienceScore = calculateResilienceScore();
+
+            const getOpportunities = () => {
+                const opportunities = [];
+                if (!devices.waterHeater.enabled) {
+                    opportunities.push({
+                        title: 'Add Smart Water Heater',
+                        savings: '+$180/year',
+                        impact: 'High',
+                        desc: 'Water heaters are perfect for load shifting — heat water when energy is cheap.',
+                        icon: '🚿'
+                    });
+                }
+                if (!devices.battery.enabled) {
+                    opportunities.push({
+                        title: 'Install Home Battery',
+                        savings: '+$290/year',
+                        impact: 'Very High',
+                        desc: 'Store cheap energy and use it during peak hours. Great for resilience too.',
+                        icon: '🔋'
+                    });
+                }
+                if (!devices.evCharger.enabled) {
+                    opportunities.push({
+                        title: 'Smart EV Charging',
+                        savings: '+$250/year',
+                        impact: 'High',
+                        desc: 'Charge your EV overnight when rates are lowest and grid is cleanest.',
+                        icon: '🚗'
+                    });
+                }
+                if (selectedRatePlan === 'flat') {
+                    opportunities.push({
+                        title: 'Switch to Time-of-Use Rate',
+                        savings: '+$120/year',
+                        impact: 'Medium',
+                        desc: 'TOU rates reward you for shifting — unlock more savings.',
+                        icon: '⚡'
+                    });
+                }
+                if (comfortPriority > 70) {
+                    opportunities.push({
+                        title: 'Adjust Comfort Settings',
+                        savings: '+$80/year',
+                        impact: 'Low',
+                        desc: 'A small comfort adjustment could boost your savings significantly.',
+                        icon: '🎚️'
+                    });
+                }
+                return opportunities.slice(0, 3);
+            };
+
+            useEffect(() => {
+                if (isAnimating) {
+                    const interval = setInterval(() => {
+                        setCurrentHour((prev) => (prev + 1) % 24);
+                    }, 800);
+                    return () => clearInterval(interval);
+                }
+            }, [isAnimating]);
+
+            const formatHour = (hour) => {
+                if (hour === 0) return '12 AM';
+                if (hour < 12) return `${hour} AM`;
+                if (hour === 12) return '12 PM';
+                return `${hour - 12} PM`;
+            };
+
+            const hours = Array.from({ length: 24 }, (_, i) => i);
+
+            const TabButton = ({ id, label }) => (
+                <button
+                    onClick={() => setActiveTab(id)}
+                    style={{
+                        padding: '12px 20px',
+                        borderRadius: '10px',
+                        border: 'none',
+                        background: activeTab === id ? 'rgba(255,255,255,0.1)' : 'transparent',
+                        color: activeTab === id ? '#fff' : '#6b8299',
+                        cursor: 'pointer',
+                        fontSize: '14px',
+                        fontWeight: '500',
+                        transition: 'all 0.2s ease',
+                        whiteSpace: 'nowrap'
+                    }}
+                >
+                    {label}
+                </button>
+            );
+
+            return (
+                <div style={{
+                    minHeight: '100vh',
+                    background: 'linear-gradient(165deg, #0a1628 0%, #1a2d4a 50%, #0d2137 100%)',
+                    fontFamily: "'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif",
+                    color: '#e8f0f7',
+                    padding: '40px 20px',
+                    position: 'relative',
+                    overflow: 'hidden'
+                }}>
+                    <div style={{
+                        position: 'absolute',
+                        top: '10%',
+                        right: '5%',
+                        width: '400px',
+                        height: '400px',
+                        background: 'radial-gradient(circle, rgba(74, 222, 128, 0.08) 0%, transparent 70%)',
+                        borderRadius: '50%',
+                        pointerEvents: 'none'
+                    }} />
+                    <div style={{
+                        position: 'absolute',
+                        bottom: '20%',
+                        left: '10%',
+                        width: '300px',
+                        height: '300px',
+                        background: 'radial-gradient(circle, rgba(56, 189, 248, 0.06) 0%, transparent 70%)',
+                        borderRadius: '50%',
+                        pointerEvents: 'none'
+                    }} />
+
+                    <div style={{ maxWidth: '1200px', margin: '0 auto', position: 'relative' }}>
+                        <header style={{ marginBottom: '36px', textAlign: 'center' }}>
+                            <div style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '12px',
+                                marginBottom: '16px',
+                                padding: '8px 16px',
+                                background: 'rgba(74, 222, 128, 0.1)',
+                                borderRadius: '24px',
+                                border: '1px solid rgba(74, 222, 128, 0.2)'
+                            }}>
+                                <div style={{
+                                    width: '10px',
+                                    height: '10px',
+                                    borderRadius: '50%',
+                                    background: '#4ade80',
+                                    boxShadow: '0 0 12px rgba(74, 222, 128, 0.6)'
+                                }} />
+                                <span style={{ fontSize: '13px', fontWeight: '500', letterSpacing: '0.5px', color: '#4ade80' }}>
+                                    ENERGY SHIFT SIMULATOR
+                                </span>
+                            </div>
+                            <h1 style={{
+                                fontSize: 'clamp(28px, 5vw, 48px)',
+                                fontWeight: '700',
+                                margin: '0 0 12px 0',
+                                background: 'linear-gradient(135deg, #ffffff 0%, #94cff7 100%)',
+                                WebkitBackgroundClip: 'text',
+                                WebkitTextFillColor: 'transparent',
+                                letterSpacing: '-1px'
+                            }}>
+                                Small shifts. Big impact.
+                            </h1>
+                            <p style={{
+                                fontSize: '17px',
+                                color: '#8ba3bc',
+                                maxWidth: '600px',
+                                margin: '0 auto',
+                                lineHeight: '1.6'
+                            }}>
+                                See how shifting your energy use helps you save money, stay comfortable, and strengthen the grid.
+                            </p>
+                        </header>
+
+                        <div style={{
+                            display: 'flex',
+                            gap: '8px',
+                            marginBottom: '24px',
+                            overflowX: 'auto',
+                            padding: '4px',
+                            background: 'rgba(0,0,0,0.2)',
+                            borderRadius: '14px',
+                            width: 'fit-content',
+                            margin: '0 auto 24px auto'
+                        }}>
+                            <TabButton id="overview" label="📊 Overview" />
+                            <TabButton id="devices" label="🏠 My Devices" />
+                            <TabButton id="opportunities" label="💡 Opportunities" />
+                            <TabButton id="rates" label="⚡ Rate Plans" />
+                            <TabButton id="resilience" label="🛡️ Resilience" />
+                        </div>
+
+                        {activeTab === 'overview' && (
+                            <>
+                                <div style={{
+                                    background: 'rgba(255, 255, 255, 0.03)',
+                                    borderRadius: '24px',
+                                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                                    padding: '28px',
+                                    marginBottom: '24px',
+                                    backdropFilter: 'blur(20px)'
+                                }}>
+                                    <div style={{
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                        alignItems: 'center',
+                                        marginBottom: '28px',
+                                        flexWrap: 'wrap',
+                                        gap: '16px'
+                                    }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                                            <span style={{ fontSize: '15px', color: '#8ba3bc' }}>Energy Shift</span>
+                                            <button
+                                                onClick={() => setShiftEnabled(!shiftEnabled)}
+                                                style={{
+                                                    width: '56px',
+                                                    height: '30px',
+                                                    borderRadius: '15px',
+                                                    border: 'none',
+                                                    background: shiftEnabled ? 'linear-gradient(135deg, #4ade80, #22c55e)' : 'rgba(255,255,255,0.15)',
+                                                    cursor: 'pointer',
+                                                    position: 'relative',
+                                                    transition: 'all 0.3s ease',
+                                                    boxShadow: shiftEnabled ? '0 0 20px rgba(74, 222, 128, 0.3)' : 'none'
+                                                }}
+                                            >
+                                                <div style={{
+                                                    width: '24px',
+                                                    height: '24px',
+                                                    borderRadius: '50%',
+                                                    background: '#fff',
+                                                    position: 'absolute',
+                                                    top: '3px',
+                                                    left: shiftEnabled ? '29px' : '3px',
+                                                    transition: 'left 0.3s ease',
+                                                    boxShadow: '0 2px 8px rgba(0,0,0,0.2)'
+                                                }} />
+                                            </button>
+                                        </div>
+
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                            <span style={{
+                                                fontSize: '14px',
+                                                color: '#8ba3bc',
+                                                padding: '6px 14px',
+                                                background: 'rgba(255,255,255,0.05)',
+                                                borderRadius: '8px'
+                                            }}>
+                                                {formatHour(currentHour)}
+                                            </span>
+                                            <button
+                                                onClick={() => setIsAnimating(!isAnimating)}
+                                                style={{
+                                                    padding: '8px 16px',
+                                                    borderRadius: '8px',
+                                                    border: '1px solid rgba(255,255,255,0.15)',
+                                                    background: isAnimating ? 'rgba(74, 222, 128, 0.15)' : 'rgba(255,255,255,0.05)',
+                                                    color: isAnimating ? '#4ade80' : '#8ba3bc',
+                                                    cursor: 'pointer',
+                                                    fontSize: '14px',
+                                                    fontWeight: '500',
+                                                    transition: 'all 0.2s ease'
+                                                }}
+                                            >
+                                                {isAnimating ? '⏸ Pause' : '▶ Simulate Day'}
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div style={{ marginBottom: '20px' }}>
+                                        <div style={{
+                                            display: 'flex',
+                                            alignItems: 'flex-end',
+                                            gap: '4px',
+                                            height: '160px',
+                                            padding: '0 8px'
+                                        }}>
+                                            {hours.map((hour) => {
+                                                const baseline = getBaselineUsage(hour);
+                                                const shifted = shiftEnabled ? getShiftedUsage(hour) : baseline;
+                                                const isPeak = isPeakHour(hour);
+                                                const isPreCool = isPreCoolHour(hour);
+                                                const isCurrent = hour === currentHour;
+
+                                                return (
+                                                    <div
+                                                        key={hour}
+                                                        style={{
+                                                            flex: 1,
+                                                            display: 'flex',
+                                                            flexDirection: 'column',
+                                                            alignItems: 'center',
+                                                            gap: '8px'
+                                                        }}
+                                                    >
+                                                        <div
+                                                            style={{
+                                                                width: '100%',
+                                                                height: `${shifted * 80}px`,
+                                                                borderRadius: '4px 4px 0 0',
+                                                                background: isCurrent
+                                                                    ? 'linear-gradient(180deg, #fbbf24, #f59e0b)'
+                                                                    : isPeak
+                                                                        ? shiftEnabled
+                                                                            ? 'linear-gradient(180deg, #4ade80, #22c55e)'
+                                                                            : 'linear-gradient(180deg, #f87171, #ef4444)'
+                                                                        : isPreCool && shiftEnabled
+                                                                            ? 'linear-gradient(180deg, #38bdf8, #0ea5e9)'
+                                                                            : 'linear-gradient(180deg, rgba(148, 207, 247, 0.4), rgba(148, 207, 247, 0.2))',
+                                                                transition: 'all 0.5s ease',
+                                                                boxShadow: isCurrent ? '0 0 20px rgba(251, 191, 36, 0.4)' : 'none',
+                                                                position: 'relative'
+                                                            }}
+                                                        >
+                                                            {shiftEnabled && isPeak && (
+                                                                <div style={{
+                                                                    position: 'absolute',
+                                                                    top: 0,
+                                                                    left: 0,
+                                                                    right: 0,
+                                                                    height: `${(baseline - shifted) * 80}px`,
+                                                                    background: 'repeating-linear-gradient(45deg, transparent, transparent 3px, rgba(255,255,255,0.1) 3px, rgba(255,255,255,0.1) 6px)',
+                                                                    borderRadius: '4px 4px 0 0',
+                                                                    transform: 'translateY(-100%)'
+                                                                }} />
+                                                            )}
+                                                        </div>
+                                                        {hour % 4 === 0 && (
+                                                            <span style={{ fontSize: '10px', color: '#6b8299' }}>
+                                                                {formatHour(hour).replace(' AM', 'a').replace(' PM', 'p')}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+
+                                    <div style={{
+                                        display: 'flex',
+                                        gap: '20px',
+                                        justifyContent: 'center',
+                                        flexWrap: 'wrap',
+                                        fontSize: '12px',
+                                        color: '#8ba3bc'
+                                    }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                            <div style={{ width: '10px', height: '10px', borderRadius: '2px', background: 'linear-gradient(180deg, #f87171, #ef4444)' }} />
+                                            <span>Peak (expensive)</span>
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                            <div style={{ width: '10px', height: '10px', borderRadius: '2px', background: 'linear-gradient(180deg, #38bdf8, #0ea5e9)' }} />
+                                            <span>Pre-conditioning</span>
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                            <div style={{ width: '10px', height: '10px', borderRadius: '2px', background: 'linear-gradient(180deg, #4ade80, #22c55e)' }} />
+                                            <span>Shifted (saving!)</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div style={{
+                                    background: 'rgba(255, 255, 255, 0.03)',
+                                    borderRadius: '20px',
+                                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                                    padding: '24px',
+                                    marginBottom: '24px'
+                                }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                                        <h3 style={{ fontSize: '16px', fontWeight: '600', margin: 0, color: '#fff' }}>
+                                            🎚️ Your Priority
+                                        </h3>
+                                        <span style={{
+                                            fontSize: '13px',
+                                            padding: '4px 12px',
+                                            borderRadius: '12px',
+                                            background: comfortPriority > 60 ? 'rgba(56, 189, 248, 0.15)' : comfortPriority < 40 ? 'rgba(74, 222, 128, 0.15)' : 'rgba(255,255,255,0.1)',
+                                            color: comfortPriority > 60 ? '#38bdf8' : comfortPriority < 40 ? '#4ade80' : '#8ba3bc'
+                                        }}>
+                                            {comfortPriority > 60 ? 'Comfort First' : comfortPriority < 40 ? 'Max Savings' : 'Balanced'}
+                                        </span>
+                                    </div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                                        <span style={{ fontSize: '13px', color: '#4ade80', minWidth: '70px' }}>💰 Savings</span>
+                                        <input
+                                            type="range"
+                                            min="0"
+                                            max="100"
+                                            value={comfortPriority}
+                                            onChange={(e) => setComfortPriority(Number(e.target.value))}
+                                            style={{
+                                                flex: 1,
+                                                height: '8px',
+                                                borderRadius: '4px',
+                                                background: 'linear-gradient(90deg, #4ade80 0%, #38bdf8 100%)',
+                                                appearance: 'none',
+                                                cursor: 'pointer'
+                                            }}
+                                        />
+                                        <span style={{ fontSize: '13px', color: '#38bdf8', minWidth: '70px', textAlign: 'right' }}>Comfort ❄️</span>
+                                    </div>
+                                    <p style={{ fontSize: '13px', color: '#6b8299', marginTop: '12px', marginBottom: 0 }}>
+                                        {comfortPriority > 60 
+                                            ? "We'll make smaller adjustments to keep you extra comfortable — you'll barely notice we're optimizing."
+                                            : comfortPriority < 40
+                                                ? "We'll maximize your savings with more aggressive shifts — you might notice slightly wider temperature swings."
+                                                : "A balanced approach that saves money while keeping your home comfortable."}
+                                    </p>
+                                </div>
+
+                                <div style={{
+                                    display: 'grid',
+                                    gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+                                    gap: '20px',
+                                    marginBottom: '24px'
+                                }}>
+                                    <div style={{
+                                        background: 'linear-gradient(135deg, rgba(74, 222, 128, 0.1) 0%, rgba(34, 197, 94, 0.05) 100%)',
+                                        borderRadius: '20px',
+                                        border: '1px solid rgba(74, 222, 128, 0.2)',
+                                        padding: '24px'
+                                    }}>
+                                        <div style={{ fontSize: '12px', color: '#4ade80', fontWeight: '600', letterSpacing: '0.5px', marginBottom: '16px' }}>
+                                            💰 YOUR SAVINGS
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px', marginBottom: '6px' }}>
+                                            <span style={{
+                                                fontSize: '42px',
+                                                fontWeight: '700',
+                                                color: '#fff',
+                                                opacity: shiftEnabled ? 1 : 0.3,
+                                                transition: 'opacity 0.3s ease'
+                                            }}>
+                                                ${shiftEnabled ? yearlySavings : '0'}
+                                            </span>
+                                            <span style={{ fontSize: '16px', color: '#8ba3bc' }}>/year</span>
+                                        </div>
+                                        <div style={{ fontSize: '13px', color: '#6b8299', marginBottom: '16px' }}>
+                                            ~${shiftEnabled ? monthlySavings : '0'}/month • {activeDevices.length} device{activeDevices.length !== 1 ? 's' : ''} enrolled
+                                        </div>
+
+                                        <div style={{ marginTop: '16px' }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#6b8299', marginBottom: '6px' }}>
+                                                <span>Home size</span>
+                                                <span>{homeSize.toLocaleString()} sq ft</span>
+                                            </div>
+                                            <input
+                                                type="range"
+                                                min="800"
+                                                max="4000"
+                                                step="100"
+                                                value={homeSize}
+                                                onChange={(e) => setHomeSize(Number(e.target.value))}
+                                                style={{
+                                                    width: '100%',
+                                                    height: '6px',
+                                                    borderRadius: '3px',
+                                                    background: 'rgba(255,255,255,0.1)',
+                                                    appearance: 'none',
+                                                    cursor: 'pointer'
+                                                }}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div style={{
+                                        background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.1) 0%, rgba(14, 165, 233, 0.05) 100%)',
+                                        borderRadius: '20px',
+                                        border: '1px solid rgba(56, 189, 248, 0.2)',
+                                        padding: '24px'
+                                    }}>
+                                        <div style={{ fontSize: '12px', color: '#38bdf8', fontWeight: '600', letterSpacing: '0.5px', marginBottom: '16px' }}>
+                                            ⚡ COLLECTIVE IMPACT
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px', marginBottom: '6px' }}>
+                                            <span style={{
+                                                fontSize: '42px',
+                                                fontWeight: '700',
+                                                color: '#fff',
+                                                opacity: shiftEnabled ? 1 : 0.3,
+                                                transition: 'opacity 0.3s ease'
+                                            }}>
+                                                {shiftEnabled ? totalGridImpact : '0'}
+                                            </span>
+                                            <span style={{ fontSize: '16px', color: '#8ba3bc' }}>MW</span>
+                                        </div>
+                                        <div style={{ fontSize: '13px', color: '#6b8299', marginBottom: '16px' }}>
+                                            Powers {shiftEnabled ? homesEquivalent.toLocaleString() : '0'} homes during peak
+                                        </div>
+
+                                        <div style={{ marginTop: '16px' }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#6b8299', marginBottom: '6px' }}>
+                                                <span>Participating homes</span>
+                                                <span>{neighborhoodHomes.toLocaleString()}</span>
+                                            </div>
+                                            <input
+                                                type="range"
+                                                min="100"
+                                                max="50000"
+                                                step="100"
+                                                value={neighborhoodHomes}
+                                                onChange={(e) => setNeighborhoodHomes(Number(e.target.value))}
+                                                style={{
+                                                    width: '100%',
+                                                    height: '6px',
+                                                    borderRadius: '3px',
+                                                    background: 'rgba(255,255,255,0.1)',
+                                                    appearance: 'none',
+                                                    cursor: 'pointer'
+                                                }}
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div style={{
+                                    background: 'rgba(255, 255, 255, 0.02)',
+                                    borderRadius: '20px',
+                                    border: '1px solid rgba(255, 255, 255, 0.06)',
+                                    padding: '28px'
+                                }}>
+                                    <h3 style={{ fontSize: '16px', fontWeight: '600', marginBottom: '20px', color: '#fff' }}>
+                                        How Energy Shift works
+                                    </h3>
+                                    <div style={{
+                                        display: 'grid',
+                                        gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                                        gap: '20px'
+                                    }}>
+                                        {[
+                                            { icon: '❄️', title: 'Pre-condition', desc: 'Before peak hours, we adjust your home — you won\'t notice.' },
+                                            { icon: '📉', title: 'Reduce peak', desc: 'During expensive hours, your devices run less.' },
+                                            { icon: '🌱', title: 'Cleaner grid', desc: 'Less need for dirty "peaker" plants.' },
+                                            { icon: '💵', title: 'You save', desc: 'Less energy when expensive = lower bills.' }
+                                        ].map((item, i) => (
+                                            <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                                <span style={{ fontSize: '24px' }}>{item.icon}</span>
+                                                <span style={{ fontSize: '14px', fontWeight: '600', color: '#fff' }}>{item.title}</span>
+                                                <span style={{ fontSize: '13px', color: '#6b8299', lineHeight: '1.4' }}>{item.desc}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </>
+                        )}
+
+                        {activeTab === 'devices' && (
+                            <div style={{
+                                background: 'rgba(255, 255, 255, 0.03)',
+                                borderRadius: '24px',
+                                border: '1px solid rgba(255, 255, 255, 0.08)',
+                                padding: '28px'
+                            }}>
+                                <div style={{ marginBottom: '24px' }}>
+                                    <h2 style={{ fontSize: '20px', fontWeight: '600', margin: '0 0 8px 0', color: '#fff' }}>
+                                        My Connected Devices
+                                    </h2>
+                                    <p style={{ fontSize: '14px', color: '#6b8299', margin: 0 }}>
+                                        Each device you connect increases your savings potential and grid impact.
+                                    </p>
+                                </div>
+
+                                <div style={{ display: 'grid', gap: '16px', marginBottom: '24px' }}>
+                                    {Object.entries(devices).map(([key, device]) => (
+                                        <div
+                                            key={key}
+                                            onClick={() => toggleDevice(key)}
+                                            style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'space-between',
+                                                padding: '20px',
+                                                borderRadius: '16px',
+                                                border: `1px solid ${device.enabled ? 'rgba(74, 222, 128, 0.3)' : 'rgba(255,255,255,0.08)'}`,
+                                                background: device.enabled ? 'rgba(74, 222, 128, 0.08)' : 'rgba(255,255,255,0.02)',
+                                                cursor: 'pointer',
+                                                transition: 'all 0.2s ease'
+                                            }}
+                                        >
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                                                <span style={{ fontSize: '32px' }}>{device.icon}</span>
+                                                <div>
+                                                    <div style={{ fontSize: '15px', fontWeight: '600', color: '#fff', marginBottom: '4px' }}>
+                                                        {device.name}
+                                                    </div>
+                                                    <div style={{ fontSize: '13px', color: '#6b8299' }}>
+                                                        +{device.savings}% savings potential • {device.peakReduction} kW shift
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div style={{
+                                                width: '48px',
+                                                height: '26px',
+                                                borderRadius: '13px',
+                                                background: device.enabled ? 'linear-gradient(135deg, #4ade80, #22c55e)' : 'rgba(255,255,255,0.15)',
+                                                position: 'relative',
+                                                transition: 'all 0.3s ease'
+                                            }}>
+                                                <div style={{
+                                                    width: '20px',
+                                                    height: '20px',
+                                                    borderRadius: '50%',
+                                                    background: '#fff',
+                                                    position: 'absolute',
+                                                    top: '3px',
+                                                    left: device.enabled ? '25px' : '3px',
+                                                    transition: 'left 0.3s ease',
+                                                    boxShadow: '0 2px 6px rgba(0,0,0,0.2)'
+                                                }} />
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                <div style={{
+                                    display: 'grid',
+                                    gridTemplateColumns: 'repeat(3, 1fr)',
+                                    gap: '16px',
+                                    padding: '20px',
+                                    background: 'rgba(255,255,255,0.03)',
+                                    borderRadius: '16px'
+                                }}>
+                                    <div style={{ textAlign: 'center' }}>
+                                        <div style={{ fontSize: '28px', fontWeight: '700', color: '#4ade80' }}>{activeDevices.length}</div>
+                                        <div style={{ fontSize: '12px', color: '#6b8299' }}>Devices Active</div>
+                                    </div>
+                                    <div style={{ textAlign: 'center' }}>
+                                        <div style={{ fontSize: '28px', fontWeight: '700', color: '#38bdf8' }}>{totalPeakReduction.toFixed(1)} kW</div>
+                                        <div style={{ fontSize: '12px', color: '#6b8299' }}>Peak Reduction</div>
+                                    </div>
+                                    <div style={{ textAlign: 'center' }}>
+                                        <div style={{ fontSize: '28px', fontWeight: '700', color: '#fbbf24' }}>+{totalDeviceSavings}%</div>
+                                        <div style={{ fontSize: '12px', color: '#6b8299' }}>Savings Boost</div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {activeTab === 'opportunities' && (
+                            <div style={{
+                                background: 'rgba(255, 255, 255, 0.03)',
+                                borderRadius: '24px',
+                                border: '1px solid rgba(255, 255, 255, 0.08)',
+                                padding: '28px'
+                            }}>
+                                <div style={{ marginBottom: '24px' }}>
+                                    <h2 style={{ fontSize: '20px', fontWeight: '600', margin: '0 0 8px 0', color: '#fff' }}>
+                                        💡 Home Opportunities
+                                    </h2>
+                                    <p style={{ fontSize: '14px', color: '#6b8299', margin: 0 }}>
+                                        Personalized ways to save more based on your current setup.
+                                    </p>
+                                </div>
+
+                                {getOpportunities().length > 0 ? (
+                                    <div style={{ display: 'grid', gap: '16px' }}>
+                                        {getOpportunities().map((opp, i) => (
+                                            <div
+                                                key={i}
+                                                style={{
+                                                    padding: '24px',
+                                                    borderRadius: '16px',
+                                                    border: '1px solid rgba(255,255,255,0.08)',
+                                                    background: 'linear-gradient(135deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.01) 100%)',
+                                                    display: 'flex',
+                                                    alignItems: 'flex-start',
+                                                    gap: '20px'
+                                                }}
+                                            >
+                                                <span style={{ fontSize: '40px' }}>{opp.icon}</span>
+                                                <div style={{ flex: 1 }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px', flexWrap: 'wrap' }}>
+                                                        <span style={{ fontSize: '17px', fontWeight: '600', color: '#fff' }}>{opp.title}</span>
+                                                        <span style={{
+                                                            fontSize: '12px',
+                                                            padding: '3px 10px',
+                                                            borderRadius: '8px',
+                                                            background: opp.impact === 'Very High' ? 'rgba(74, 222, 128, 0.2)' : opp.impact === 'High' ? 'rgba(56, 189, 248, 0.2)' : 'rgba(255,255,255,0.1)',
+                                                            color: opp.impact === 'Very High' ? '#4ade80' : opp.impact === 'High' ? '#38bdf8' : '#8ba3bc'
+                                                        }}>
+                                                            {opp.impact} Impact
+                                                        </span>
+                                                    </div>
+                                                    <p style={{ fontSize: '14px', color: '#8ba3bc', margin: '0 0 12px 0', lineHeight: '1.5' }}>
+                                                        {opp.desc}
+                                                    </p>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+                                                        <span style={{ fontSize: '18px', fontWeight: '700', color: '#4ade80' }}>{opp.savings}</span>
+                                                        <button style={{
+                                                            padding: '8px 16px',
+                                                            borderRadius: '8px',
+                                                            border: '1px solid rgba(74, 222, 128, 0.3)',
+                                                            background: 'rgba(74, 222, 128, 0.1)',
+                                                            color: '#4ade80',
+                                                            fontSize: '13px',
+                                                            fontWeight: '500',
+                                                            cursor: 'pointer'
+                                                        }}>
+                                                            Learn More →
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div style={{
+                                        textAlign: 'center',
+                                        padding: '48px',
+                                        color: '#6b8299'
+                                    }}>
+                                        <span style={{ fontSize: '48px', display: 'block', marginBottom: '16px' }}>🎉</span>
+                                        <p style={{ fontSize: '16px', margin: 0 }}>
+                                            You're fully optimized! All devices connected and settings tuned for maximum savings.
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {activeTab === 'rates' && (
+                            <div style={{
+                                background: 'rgba(255, 255, 255, 0.03)',
+                                borderRadius: '24px',
+                                border: '1px solid rgba(255, 255, 255, 0.08)',
+                                padding: '28px'
+                            }}>
+                                <div style={{ marginBottom: '24px' }}>
+                                    <h2 style={{ fontSize: '20px', fontWeight: '600', margin: '0 0 8px 0', color: '#fff' }}>
+                                        ⚡ Utility Rate Plans
+                                    </h2>
+                                    <p style={{ fontSize: '14px', color: '#6b8299', margin: 0 }}>
+                                        Time-of-use rates reward you for shifting energy. See the difference.
+                                    </p>
+                                </div>
+
+                                <div style={{ display: 'grid', gap: '12px', marginBottom: '32px' }}>
+                                    {Object.entries(ratePlans).map(([key, plan]) => (
+                                        <div
+                                            key={key}
+                                            onClick={() => setSelectedRatePlan(key)}
+                                            style={{
+                                                padding: '20px',
+                                                borderRadius: '16px',
+                                                border: `2px solid ${selectedRatePlan === key ? '#4ade80' : 'rgba(255,255,255,0.08)'}`,
+                                                background: selectedRatePlan === key ? 'rgba(74, 222, 128, 0.08)' : 'rgba(255,255,255,0.02)',
+                                                cursor: 'pointer',
+                                                transition: 'all 0.2s ease'
+                                            }}
+                                        >
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                                                <span style={{ fontSize: '16px', fontWeight: '600', color: '#fff' }}>{plan.name}</span>
+                                                {selectedRatePlan === key && (
+                                                    <span style={{ fontSize: '12px', color: '#4ade80', fontWeight: '500' }}>✓ Selected</span>
+                                                )}
+                                            </div>
+                                            <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+                                                <div>
+                                                    <div style={{ fontSize: '11px', color: '#6b8299', marginBottom: '2px' }}>Off-Peak</div>
+                                                    <div style={{ fontSize: '18px', fontWeight: '600', color: '#4ade80' }}>${plan.offPeak.toFixed(2)}</div>
+                                                </div>
+                                                <div>
+                                                    <div style={{ fontSize: '11px', color: '#6b8299', marginBottom: '2px' }}>Mid-Peak</div>
+                                                    <div style={{ fontSize: '18px', fontWeight: '600', color: '#fbbf24' }}>${plan.midPeak.toFixed(2)}</div>
+                                                </div>
+                                                <div>
+                                                    <div style={{ fontSize: '11px', color: '#6b8299', marginBottom: '2px' }}>Peak</div>
+                                                    <div style={{ fontSize: '18px', fontWeight: '600', color: '#f87171' }}>${plan.peak.toFixed(2)}</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                <div style={{
+                                    padding: '24px',
+                                    background: 'rgba(0,0,0,0.2)',
+                                    borderRadius: '16px'
+                                }}>
+                                    <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#fff', marginBottom: '16px' }}>
+                                        24-Hour Rate Comparison
+                                    </h4>
+                                    <div style={{ display: 'flex', alignItems: 'flex-end', gap: '2px', height: '100px' }}>
+                                        {hours.map((hour) => {
+                                            const isPeak = isPeakHour(hour);
+                                            const isMidPeak = (hour >= 9 && hour < 16) || (hour >= 21 && hour < 23);
+                                            const rate = isPeak ? currentRate.peak : isMidPeak ? currentRate.midPeak : currentRate.offPeak;
+                                            const maxRate = 0.45;
+
+                                            return (
+                                                <div
+                                                    key={hour}
+                                                    style={{
+                                                        flex: 1,
+                                                        height: `${(rate / maxRate) * 100}%`,
+                                                        background: isPeak
+                                                            ? 'linear-gradient(180deg, #f87171, #ef4444)'
+                                                            : isMidPeak
+                                                                ? 'linear-gradient(180deg, #fbbf24, #f59e0b)'
+                                                                : 'linear-gradient(180deg, #4ade80, #22c55e)',
+                                                        borderRadius: '2px 2px 0 0',
+                                                        transition: 'height 0.3s ease'
+                                                    }}
+                                                />
+                                            );
+                                        })}
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px' }}>
+                                        <span style={{ fontSize: '10px', color: '#6b8299' }}>12a</span>
+                                        <span style={{ fontSize: '10px', color: '#6b8299' }}>6a</span>
+                                        <span style={{ fontSize: '10px', color: '#6b8299' }}>12p</span>
+                                        <span style={{ fontSize: '10px', color: '#6b8299' }}>6p</span>
+                                        <span style={{ fontSize: '10px', color: '#6b8299' }}>12a</span>
+                                    </div>
+                                </div>
+
+                                <p style={{ fontSize: '13px', color: '#6b8299', marginTop: '16px', marginBottom: 0, textAlign: 'center' }}>
+                                    💡 Energy Shift automatically moves your usage to green (cheap) hours.
+                                </p>
+                            </div>
+                        )}
+
+                        {activeTab === 'resilience' && (
+                            <div style={{
+                                background: 'rgba(255, 255, 255, 0.03)',
+                                borderRadius: '24px',
+                                border: '1px solid rgba(255, 255, 255, 0.08)',
+                                padding: '28px'
+                            }}>
+                                <div style={{ marginBottom: '24px' }}>
+                                    <h2 style={{ fontSize: '20px', fontWeight: '600', margin: '0 0 8px 0', color: '#fff' }}>
+                                        🛡️ Home Resilience Score
+                                    </h2>
+                                    <p style={{ fontSize: '14px', color: '#6b8299', margin: 0 }}>
+                                        How prepared is your home for grid stress events and outages?
+                                    </p>
+                                </div>
+
+                                <div style={{
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    alignItems: 'center',
+                                    padding: '40px',
+                                    marginBottom: '32px'
+                                }}>
+                                    <div style={{
+                                        width: '180px',
+                                        height: '180px',
+                                        borderRadius: '50%',
+                                        background: `conic-gradient(${resilienceScore >= 70 ? '#4ade80' : resilienceScore >= 40 ? '#fbbf24' : '#f87171'} ${resilienceScore * 3.6}deg, rgba(255,255,255,0.1) 0deg)`,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        position: 'relative'
+                                    }}>
+                                        <div style={{
+                                            width: '150px',
+                                            height: '150px',
+                                            borderRadius: '50%',
+                                            background: '#0d1f33',
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            alignItems: 'center',
+                                            justifyContent: 'center'
+                                        }}>
+                                            <span style={{ fontSize: '48px', fontWeight: '700', color: '#fff' }}>{resilienceScore}</span>
+                                            <span style={{ fontSize: '14px', color: '#6b8299' }}>out of 100</span>
+                                        </div>
+                                    </div>
+                                    <div style={{
+                                        marginTop: '20px',
+                                        fontSize: '18px',
+                                        fontWeight: '600',
+                                        color: resilienceScore >= 70 ? '#4ade80' : resilienceScore >= 40 ? '#fbbf24' : '#f87171'
+                                    }}>
+                                        {resilienceScore >= 70 ? '🏆 Excellent' : resilienceScore >= 40 ? '⚡ Good' : '⚠️ Needs Improvement'}
+                                    </div>
+                                </div>
+
+                                <div style={{ display: 'grid', gap: '12px' }}>
+                                    <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#fff', margin: 0 }}>Score Breakdown</h4>
+                                    {[
+                                        { name: 'Smart Thermostat', points: 15, has: devices.thermostat.enabled },
+                                        { name: 'Home Battery', points: 35, has: devices.battery.enabled },
+                                        { name: 'Smart Water Heater', points: 10, has: devices.waterHeater.enabled },
+                                        { name: 'EV as Backup', points: 15, has: devices.evCharger.enabled },
+                                        { name: 'Time-of-Use Rate', points: 5, has: selectedRatePlan !== 'flat' },
+                                        { name: 'Base Score', points: 20, has: true }
+                                    ].map((item, i) => (
+                                        <div
+                                            key={i}
+                                            style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'space-between',
+                                                padding: '12px 16px',
+                                                borderRadius: '10px',
+                                                background: item.has ? 'rgba(74, 222, 128, 0.08)' : 'rgba(255,255,255,0.02)',
+                                                border: `1px solid ${item.has ? 'rgba(74, 222, 128, 0.2)' : 'rgba(255,255,255,0.05)'}`
+                                            }}
+                                        >
+                                            <span style={{ fontSize: '14px', color: item.has ? '#fff' : '#6b8299' }}>
+                                                {item.has ? '✓' : '○'} {item.name}
+                                            </span>
+                                            <span style={{
+                                                fontSize: '14px',
+                                                fontWeight: '600',
+                                                color: item.has ? '#4ade80' : '#4a5568'
+                                            }}>
+                                                +{item.points} pts
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                <div style={{
+                                    marginTop: '24px',
+                                    padding: '16px',
+                                    borderRadius: '12px',
+                                    background: 'rgba(56, 189, 248, 0.1)',
+                                    border: '1px solid rgba(56, 189, 248, 0.2)'
+                                }}>
+                                    <p style={{ fontSize: '13px', color: '#8ba3bc', margin: 0 }}>
+                                        💡 <strong style={{ color: '#38bdf8' }}>Tip:</strong> Adding a home battery would increase your resilience score by 35 points and provide backup power during outages.
+                                    </p>
+                                </div>
+                            </div>
+                        )}
+
+                        <footer style={{
+                            marginTop: '40px',
+                            textAlign: 'center',
+                            paddingTop: '24px',
+                            borderTop: '1px solid rgba(255,255,255,0.06)'
+                        }}>
+                            <p style={{ fontSize: '13px', color: '#4a6382' }}>
+                                Built by Nora • Demonstrating product thinking for Renew Home's Senior PM, Consumer role
+                            </p>
+                        </footer>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<EnergyShiftSimulator />);
+    </script>
+</body>
+</html>
