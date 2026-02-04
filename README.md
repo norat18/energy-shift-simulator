@@ -2,7 +2,7 @@
 See how shifting your energy use helps you save money, stay comfortable, and strengthen the grid. 
 # Energy Shift Simulator
 
-An interactive demo exploring how smart energy shifting helps homeowners save money while supporting grid stability — built to demonstrate product thinking for [Renew Home](https://www.renewhome.com/).
+An interactive demo exploring how smart energy shifting helps customers save money while supporting grid stability — built to demonstrate product thinking for [Puget Sound Energy](https://www.pse.com/).
 
 **[View Live Demo →](https://YOUR-USERNAME.github.io/energy-shift-simulator/)**
 
@@ -12,9 +12,9 @@ An interactive demo exploring how smart energy shifting helps homeowners save mo
 
 ## Why I Built This
 
-Renew Home is building North America's largest residential virtual power plant (VPP) by helping millions of homes shift energy use to cheaper, cleaner times. The core challenge: **making complex energy concepts feel simple and actionable for everyday consumers** — people who want to save money without becoming energy experts.
+Puget Sound Energy is developing demand response programs to help commercial and industrial customers reduce peak energy consumption while saving money. The core challenge: **making complex energy concepts feel simple and actionable for customers** — businesses that want to reduce costs and support grid reliability without becoming energy experts.
 
-This simulator explores that challenge through five interconnected features.
+This simulator explores that challenge through five interconnected features, demonstrating how demand response value propositions can be communicated effectively to drive program enrollment and engagement.
 
 ---
 
@@ -72,15 +72,16 @@ The simulator is intentionally lightweight — demonstrating that effective cons
 
 ---
 
-## Alignment with Renew Home's Mission
+## Alignment with PSE's C&I Demand Response Goals
 
-| Renew Home Goal | How This Demo Addresses It |
-|-----------------|---------------------------|
-| "Make it easy for customers to save energy and money" | Every feature focuses on clarity and actionability |
-| "Without needing to be energy experts" | Complex concepts (TOU rates, demand response, VPP) explained visually |
-| "Improve comfort and increase resilience" | Comfort slider + Resilience Score make these tangible |
-| "Surface new ways for users to save" | Home Opportunities provides personalized recommendations |
-| "Partner-integrated product requirements" | Device ecosystem shows how OEM partnerships create user value |
+| PSE Goal | How This Demo Addresses It |
+|----------|---------------------------|
+| Develop new energy solutions for C&I customers | Demonstrates customer-facing product concepts that make demand response accessible |
+| Market research & stakeholder engagement | Shows how to communicate value propositions and gather user preferences (comfort vs. savings) |
+| Drive program enrollment | Visualizes ROI clearly with savings calculators and collective grid impact |
+| Financial modeling & P&L | Real-time savings estimates demonstrate how to present financial benefits to customers |
+| Go-to-market strategy | Personalized "Opportunities" feature shows how to upsell additional services and devices |
+| Partnership & vendor management | Device ecosystem demonstrates how equipment partnerships create customer value |
 
 ---
 
