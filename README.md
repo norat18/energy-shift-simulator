@@ -1,64 +1,79 @@
-# energy-shift-simulator
-See how shifting your energy use helps you save money, stay comfortable, and strengthen the grid. 
-# Energy Shift Simulator
+# C&I Demand Response Simulator
 
-An interactive demo exploring how smart energy shifting helps homeowners save money while supporting grid stability — built to demonstrate product thinking for [Renew Home](https://www.renewhome.com/).
+An interactive demo exploring how demand response helps commercial and industrial customers reduce costs, earn incentives, and support grid reliability — built to demonstrate product thinking for [Puget Sound Energy](https://www.pse.com/).
 
 **[View Live Demo →](https://YOUR-USERNAME.github.io/energy-shift-simulator/)**
 
-![Energy Shift Simulator Screenshot](screenshot.png)
+![C&I Demand Response Simulator Screenshot](screenshot.png)
 
 ---
 
 ## Why I Built This
 
-Renew Home is building North America's largest residential virtual power plant (VPP) by helping millions of homes shift energy use to cheaper, cleaner times. The core challenge: **making complex energy concepts feel simple and actionable for everyday consumers** — people who want to save money without becoming energy experts.
+Puget Sound Energy is developing demand response programs to help commercial and industrial customers reduce peak energy consumption while earning revenue. The core challenge: **making complex C&I demand response concepts accessible to multiple stakeholders** — facility managers who need to understand operational impacts, CFOs who need to see the business case, and operations teams who need to plan around events.
 
-This simulator explores that challenge through five interconnected features.
+This simulator explores that challenge through four interconnected features, demonstrating how demand response value propositions can be communicated effectively to drive program enrollment and engagement.
 
 ---
 
 ## Features & Product Thinking
 
-### 📊 Energy Shift Visualization
-**Problem:** Most people don't understand *when* energy is expensive or *why* shifting matters.
+### 🏢 Customer Segment Selector
+**Problem:** C&I customers vary dramatically — a restaurant has different loads, constraints, and economics than a data center.
 
-**Solution:** A 24-hour usage chart that shows baseline vs. optimized consumption in real-time. Toggle "Energy Shift" on/off to see the difference. The "Simulate Day" animation makes the pre-cooling → peak reduction pattern intuitive.
-
----
-
-### 🎚️ Comfort vs. Savings Slider
-**Problem:** Users have different tolerances — some prioritize savings, others want minimal disruption.
-
-**Solution:** A simple slider that adjusts the aggressiveness of energy shifts. The UI responds dynamically, showing how their choice affects estimated savings. This builds trust by giving users control.
+**Solution:** Four distinct customer segments (SMB, Commercial, Industrial, Large Load) with realistic load profiles, demand charges, and facility-specific equipment. Selecting a segment instantly updates all calculations and recommendations to match that customer's reality.
 
 ---
 
-### 🏠 Device Ecosystem
-**Problem:** VPP value scales with more connected devices, but users don't see how each device contributes.
+### 📊 Load Profile Visualization
+**Problem:** Customers don't know which loads they can curtail vs. which are critical to operations.
 
-**Solution:** Toggle devices (thermostat, water heater, EV charger, battery, pool pump) and watch savings/grid impact update. Each device shows its individual contribution, making the value of adding devices tangible.
-
----
-
-### 💡 Home Opportunities
-**Problem:** Users don't know what actions would help them save more.
-
-**Solution:** Personalized recommendations based on current setup. Missing a battery? We suggest it with estimated impact. On a flat rate? We explain why TOU could unlock more savings. This mirrors the "Home Opportunities" feature area in the PM role.
+**Solution:** Visual breakdown of facility loads showing curtailable vs. critical classification. The 24-hour demand chart shows baseline consumption and what happens during a DR event — making the curtailment opportunity concrete and measurable.
 
 ---
 
-### ⚡ Rate Plan Comparison
-**Problem:** Time-of-use rates are confusing, and users don't understand why they matter for energy shifting.
+### 💰 DR Program Comparison
+**Problem:** Multiple program types exist (capacity, energy, emergency) with different payment structures, notice periods, and penalties. Customers struggle to compare options.
 
-**Solution:** Visual comparison of Flat, TOU, and TOU+ rate structures with a 24-hour price chart. Makes it obvious why shifting usage to green (cheap) hours saves money.
+**Solution:** Side-by-side comparison of three program types showing:
+- Payment structure ($/kW/month vs $/kWh)
+- Firm commitment vs. economic dispatch
+- Auto-DR vs. manual response requirements
+- Penalty structures and event frequency
 
 ---
 
-### 🛡️ Resilience Score
-**Problem:** Energy resilience is abstract — users don't know how prepared they are for outages.
+### 📈 Business Case Builder
+**Problem:** Decision-makers need to justify DR participation with hard numbers — implementation costs, payback period, annual ROI.
 
-**Solution:** A simple 0-100 score with clear breakdown of what contributes (battery = +35 pts, etc.). Creates a gamified path toward better preparedness while surfacing upgrade opportunities.
+**Solution:** Dynamic calculator that combines:
+- Incentive revenue based on selected program
+- Demand charge savings ($/kW matters more than $/kWh for C&I)
+- Implementation costs (~$15/kW for controls)
+- Payback period in months
+- Ongoing annual benefit
+
+---
+
+### ⚙️ Operational Impact Scenarios
+**Problem:** Operations teams worry: "What happens to my facility during a 4-hour event?"
+
+**Solution:** Segment-specific impact scenarios showing:
+- What each curtailable load experiences during an event
+- Severity ratings (low/moderate)
+- Mitigation strategies (pre-cooling, production shifting, etc.)
+- Stakeholder communication guide (Facility Manager, CFO, Operations)
+
+---
+
+## Key C&I vs. Residential Differences
+
+| Residential Focus | C&I Focus (This Demo) |
+|------------------|----------------------|
+| Individual appliances | Facility-level loads (HVAC systems, industrial processes) |
+| Simple kWh savings | Demand charges ($/kW) often matter more than energy ($/kWh) |
+| Single user decision | Multiple stakeholders (facility manager, CFO, operations) |
+| Comfort trade-offs | Production/operations impact concerns |
 
 ---
 
@@ -68,25 +83,26 @@ This simulator explores that challenge through five interconnected features.
 - **Hosting:** GitHub Pages (static HTML with CDN-loaded React)
 - **No build step:** Single `index.html` file for simplicity
 
-The simulator is intentionally lightweight — demonstrating that effective consumer experiences don't require complex infrastructure.
+The simulator is intentionally lightweight — demonstrating that effective B2B experiences don't require complex infrastructure.
 
 ---
 
-## Alignment with Renew Home's Mission
+## Alignment with PSE's C&I Demand Response Goals
 
-| Renew Home Goal | How This Demo Addresses It |
-|-----------------|---------------------------|
-| "Make it easy for customers to save energy and money" | Every feature focuses on clarity and actionability |
-| "Without needing to be energy experts" | Complex concepts (TOU rates, demand response, VPP) explained visually |
-| "Improve comfort and increase resilience" | Comfort slider + Resilience Score make these tangible |
-| "Surface new ways for users to save" | Home Opportunities provides personalized recommendations |
-| "Partner-integrated product requirements" | Device ecosystem shows how OEM partnerships create user value |
+| PSE Goal | How This Demo Addresses It |
+|----------|---------------------------|
+| Develop new energy solutions for C&I customers | Four distinct customer segments with segment-specific load profiles and economics |
+| Market research & stakeholder engagement | Multi-stakeholder communication guide addresses FM, CFO, and Operations concerns |
+| Drive program enrollment | Business case builder makes ROI tangible with payback periods and annual savings |
+| Financial modeling & P&L | Dynamic calculations for incentive revenue, demand charge savings, and implementation costs |
+| Go-to-market strategy | Program comparison helps customers self-select the right program for their operations |
+| Partnership & vendor management | Auto-DR recommendations show how technology partnerships enable faster response |
 
 ---
 
 ## About Me
 
-I'm Nora — a product-minded builder exploring the energy transition. I built this to demonstrate how I think about consumer product challenges: starting with user needs, making complex systems feel simple, and shipping something tangible.
+I'm Nora — a product-minded builder exploring the energy transition. I built this to demonstrate how I think about B2B product challenges: understanding diverse customer segments, addressing multiple stakeholder concerns, and making complex economics feel simple.
 
 **Let's chat:** [LinkedIn](https://linkedin.com/in/YOUR-PROFILE) | [Email](mailto:your@email.com)
 
