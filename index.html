@@ -8,9 +8,9 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
     <style>
         * {
             box-sizing: border-box;
@@ -19,9 +19,20 @@
         }
         body {
             font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: #0a1628;
+        }
+        input[type="range"] {
+            width: 100%;
+            height: 8px;
+            border-radius: 4px;
+            background: linear-gradient(90deg, #4ade80 0%, #38bdf8 100%);
+            appearance: none;
+            -webkit-appearance: none;
+            cursor: pointer;
         }
         input[type="range"]::-webkit-slider-thumb {
             appearance: none;
+            -webkit-appearance: none;
             width: 18px;
             height: 18px;
             border-radius: 50%;
@@ -38,6 +49,24 @@
             border: none;
             box-shadow: 0 2px 8px rgba(0,0,0,0.3);
         }
+        input[type="number"] {
+            width: 100%;
+            padding: 8px 10px;
+            border-radius: 8px;
+            border: 1px solid rgba(255,255,255,0.15);
+            background: rgba(0,0,0,0.25);
+            color: #fff;
+            font-family: inherit;
+            font-size: 14px;
+        }
+        input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            accent-color: #4ade80;
+            cursor: pointer;
+            flex-shrink: 0;
+            margin-top: 2px;
+        }
     </style>
 </head>
 <body>
@@ -45,177 +74,540 @@
     <script type="text/babel">
         const { useState, useEffect } = React;
 
+        // ---------- Theme ----------
+        const C = {
+            green: '#4ade80', blue: '#38bdf8', amber: '#fbbf24', red: '#f87171',
+            purple: '#c084fc', muted: '#6b8299', sub: '#8ba3bc'
+        };
+        const panel = {
+            background: 'rgba(255, 255, 255, 0.03)',
+            borderRadius: '24px',
+            border: '1px solid rgba(255, 255, 255, 0.08)',
+            padding: '28px',
+            marginBottom: '24px'
+        };
+        const subPanel = { padding: '24px', borderRadius: '16px', background: 'rgba(0,0,0,0.2)', marginBottom: '24px' };
+        const callout = (color) => ({
+            padding: '16px 20px', borderRadius: '12px', background: `${color}1a`,
+            border: `1px solid ${color}40`, fontSize: '13px', color: C.sub, lineHeight: 1.55
+        });
+        const autoGrid = (min) => ({ display: 'grid', gridTemplateColumns: `repeat(auto-fit, minmax(${min}px, 1fr))`, gap: '16px' });
+
+        // ---------- Helpers ----------
+        const mod24 = (h) => ((h % 24) + 24) % 24;
+        const sum = (a) => a.reduce((s, x) => s + x, 0);
+        const num = (n) => Math.round(n).toLocaleString();
+        const money = (n) => `${n < 0 ? '-' : ''}$${Math.abs(Math.round(n)).toLocaleString()}`;
+        const formatHour = (hour) => {
+            const h = mod24(hour);
+            if (h === 0) return '12 AM';
+            if (h < 12) return `${h} AM`;
+            if (h === 12) return '12 PM';
+            return `${h - 12} PM`;
+        };
+        const formatWindow = (start, dur) => `${formatHour(start)} – ${formatHour(start + dur)}`;
+
+        // ---------- Data ----------
+        // Loads: kw = connected load at peak, pct = share that can be shed during an event,
+        // shift = load whose energy comes back before/after the event (thermal mass, batch production, charging).
+        const SEGMENTS = {
+            smb: {
+                name: 'Small-Medium Business',
+                icon: '🏪',
+                examples: 'Restaurant, Retail Store, Small Office',
+                avgMonthlyBill: 4500,
+                controlsCost: 150, // $/kW, illustrative
+                loads: {
+                    hvac: { name: 'HVAC (heat/cool)', kw: 35, pct: 40, shift: true, icon: '🌡️' },
+                    lighting: { name: 'Lighting', kw: 15, pct: 40, shift: false, icon: '💡' },
+                    refrigeration: { name: 'Refrigeration', kw: 20, pct: 0, shift: true, icon: '🧊' },
+                    equipment: { name: 'Equipment/POS', kw: 5, pct: 0, shift: false, icon: '🖥️' }
+                },
+                profiles: {
+                    summer: [0.2, 0.2, 0.2, 0.2, 0.2, 0.3, 0.5, 0.7, 0.9, 1.0, 1.0, 1.0, 0.95, 0.9, 0.85, 0.8, 0.85, 0.9, 0.95, 0.8, 0.6, 0.4, 0.3, 0.25],
+                    winter: [0.25, 0.25, 0.25, 0.25, 0.3, 0.4, 0.6, 0.85, 1.0, 0.95, 0.9, 0.9, 0.9, 0.85, 0.8, 0.8, 0.85, 0.95, 0.95, 0.8, 0.6, 0.45, 0.35, 0.3]
+                }
+            },
+            commercial: {
+                name: 'Commercial',
+                icon: '🏢',
+                examples: 'Office Building, Hospital, University',
+                avgMonthlyBill: 35000,
+                controlsCost: 80,
+                loads: {
+                    hvac: { name: 'HVAC/Heat Pumps/Chiller', kw: 250, pct: 35, shift: true, icon: '🌡️' },
+                    lighting: { name: 'Lighting Systems', kw: 100, pct: 30, shift: false, icon: '💡' },
+                    elevators: { name: 'Elevators', kw: 50, pct: 0, shift: false, icon: '🛗' },
+                    dataCenter: { name: 'Data/IT Systems', kw: 80, pct: 0, shift: false, icon: '🖥️' },
+                    other: { name: 'Misc. Loads', kw: 20, pct: 50, shift: false, icon: '⚡' }
+                },
+                profiles: {
+                    summer: [0.3, 0.3, 0.3, 0.3, 0.3, 0.35, 0.5, 0.7, 0.9, 0.95, 1.0, 1.0, 0.95, 0.95, 1.0, 1.0, 0.95, 0.85, 0.7, 0.5, 0.4, 0.35, 0.3, 0.3],
+                    winter: [0.35, 0.35, 0.35, 0.35, 0.4, 0.55, 0.8, 1.0, 0.95, 0.85, 0.8, 0.78, 0.75, 0.75, 0.75, 0.78, 0.85, 0.9, 0.8, 0.6, 0.45, 0.4, 0.38, 0.35]
+                }
+            },
+            industrial: {
+                name: 'Industrial',
+                icon: '🏭',
+                examples: 'Manufacturing, Cold Storage, Processing',
+                avgMonthlyBill: 125000,
+                controlsCost: 60,
+                loads: {
+                    process: { name: 'Process Equipment', kw: 800, pct: 25, shift: true, icon: '⚙️' },
+                    hvac: { name: 'HVAC/Ventilation', kw: 300, pct: 35, shift: true, icon: '🌡️' },
+                    refrigeration: { name: 'Industrial Cooling', kw: 500, pct: 0, shift: true, icon: '🧊' },
+                    compressors: { name: 'Compressors', kw: 250, pct: 30, shift: true, icon: '🔧' },
+                    lighting: { name: 'Facility Lighting', kw: 150, pct: 30, shift: false, icon: '💡' }
+                },
+                profiles: {
+                    summer: [0.6, 0.6, 0.6, 0.6, 0.6, 0.7, 0.85, 0.95, 1.0, 1.0, 1.0, 0.95, 0.9, 0.95, 1.0, 1.0, 0.95, 0.9, 0.8, 0.7, 0.65, 0.6, 0.6, 0.6],
+                    winter: [0.65, 0.65, 0.65, 0.65, 0.7, 0.8, 0.95, 1.0, 1.0, 0.98, 0.95, 0.92, 0.9, 0.92, 0.95, 0.95, 0.95, 0.92, 0.85, 0.75, 0.7, 0.68, 0.65, 0.65]
+                }
+            },
+            largeLoad: {
+                name: 'Large Load',
+                icon: '⚡',
+                examples: 'Data Center, Water Treatment, Campus',
+                avgMonthlyBill: 400000,
+                controlsCost: 40,
+                loads: {
+                    computing: { name: 'Computing Load', kw: 2500, pct: 0, shift: false, icon: '🖥️' },
+                    cooling: { name: 'Cooling Systems', kw: 1500, pct: 20, shift: true, icon: '❄️' },
+                    backup: { name: 'Backup Systems', kw: 400, pct: 0, shift: false, icon: '🔋' },
+                    lighting: { name: 'Facility Lighting', kw: 200, pct: 30, shift: false, icon: '💡' },
+                    auxiliary: { name: 'Auxiliary Systems', kw: 400, pct: 40, shift: false, icon: '⚡' }
+                },
+                profiles: {
+                    summer: [0.85, 0.85, 0.85, 0.85, 0.85, 0.85, 0.9, 0.95, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.95, 0.9, 0.9, 0.88, 0.85, 0.85, 0.85],
+                    winter: [0.88, 0.88, 0.88, 0.88, 0.88, 0.9, 0.95, 1.0, 1.0, 0.98, 0.97, 0.96, 0.96, 0.96, 0.97, 0.98, 1.0, 1.0, 0.97, 0.94, 0.92, 0.9, 0.89, 0.88]
+                }
+            },
+            fleet: {
+                name: 'Fleet Depot',
+                icon: '🚚',
+                examples: 'Transit, Delivery & Utility Fleets',
+                avgMonthlyBill: 28000,
+                controlsCost: 50,
+                loads: {
+                    chargers: { name: 'EV Fleet Chargers', kw: 600, pct: 80, shift: true, icon: '🔌' },
+                    hvac: { name: 'Depot HVAC', kw: 120, pct: 35, shift: true, icon: '🌡️' },
+                    shop: { name: 'Maintenance Shop', kw: 100, pct: 20, shift: true, icon: '🔧' },
+                    lighting: { name: 'Yard & Depot Lighting', kw: 50, pct: 30, shift: false, icon: '💡' },
+                    office: { name: 'Dispatch Office/IT', kw: 30, pct: 0, shift: false, icon: '🖥️' }
+                },
+                profiles: {
+                    summer: [0.8, 0.75, 0.7, 0.6, 0.5, 0.4, 0.35, 0.35, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3, 0.35, 0.45, 0.65, 0.85, 1.0, 1.0, 0.95, 0.9, 0.85, 0.8],
+                    winter: [0.8, 0.75, 0.7, 0.6, 0.5, 0.45, 0.4, 0.4, 0.35, 0.3, 0.3, 0.3, 0.3, 0.3, 0.35, 0.45, 0.65, 0.85, 1.0, 1.0, 0.95, 0.9, 0.85, 0.8]
+                }
+            }
+        };
+        Object.values(SEGMENTS).forEach((s) => {
+            s.basePeak = sum(Object.values(s.loads).map((l) => l.kw));
+        });
+
+        // PSE Flex programs for business customers, from PSE's public program pages and terms (checked Oct 2026).
+        // basis: how the incentive is paid. Seasons: winter (Nov 1 – Mar 31) and summer (May 1 – Sep 30).
+        const PROGRAMS = {
+            flexci: {
+                name: 'Flex C&I',
+                type: 'Capacity + performance',
+                basis: 'kw-season',
+                rate: 65, // $/kW per season, PSE's advertised maximum
+                rateLabel: 'Up to $65/kW per season',
+                schedules: ['7A', '24', '25', '26', '31', '35', '49'],
+                notice: 'Text, email, or call before dispatch',
+                shortfallTerms: 'No published penalty. Earnings combine your committed kW with your average performance across the season, so a shortfall lowers your payment.',
+                desc: 'PSE\'s program for larger businesses, delivered with Enel: a custom energy-reduction plan, manual or automated response, and 24/7 dispatch support at no cost to enroll. Includes Peak and Emergency events; only Peak events are modeled here, since Emergency terms aren\'t published.'
+            },
+            flexbusiness: {
+                name: 'Flex Business',
+                type: 'Opt-in, behavioral',
+                basis: 'kwh',
+                rate: 1, // $/kWh saved
+                rateLabel: '$1/kWh saved',
+                schedules: ['24', '25'],
+                notice: 'Email or text, at least 5 hours ahead',
+                shortfallTerms: 'No penalty. You can decline any event and are paid for the kWh you save, plus a $50 one-time enrollment payment.',
+                desc: 'For small and medium businesses. PSE notifies you of an event and you cut use any way you choose.'
+            },
+            flexsmart: {
+                name: 'Flex Smart (business thermostats)',
+                type: 'Automated thermostat',
+                basis: 'kw-season-hvac',
+                rate: 35, // $/kW of average reduction per season
+                rateLabel: '$35/kW per season',
+                schedules: ['24', '25'],
+                notice: 'Up to 2 hours, on the thermostat',
+                shortfallTerms: 'No penalty. Overrides are allowed but lower your average kW. Also $50 per smart thermostat to enroll and $20 per thermostat each season.',
+                desc: 'PSE adjusts enrolled thermostats up to 4°F, with up to 1 hour of pre-conditioning. Paid on the average kW your HVAC reduces across the season\'s events.'
+            }
+        };
+        const SEASONS_PER_YEAR = 2;
+        // PSE called 7 events in its first Flex winter (2023–24). Flex Business and Flex Smart terms cap events at 15 per season.
+        const EVENTS = { low: 6, expected: 12, high: 30 };
+
+        // PSE Schedule 26 (Large Demand General Service), effective 3/21/2026, via the OpenEI rate database.
+        // The higher demand rate applies in the winter months (Oct – Mar).
+        const TARIFF = { winterDemand: 18.88, summerDemand: 11.67, energy: 0.12 };
+        const scheduleFor = (peakKW) => (peakKW <= 50 ? '24' : peakKW <= 350 ? '25' : '26');
+
+        // Peak windows from PSE's 2026 Demand Response RFP (Appendix B).
+        const EVENT_WINDOWS = {
+            winterAM: { label: '❄️ Winter AM', start: 7, season: 'winter', note: 'PSE\'s winter peak (Dec–Feb) typically falls 7–10 AM and/or 5–10 PM on days below 30°F, and lasts 4–6 hours.' },
+            winterPM: { label: '❄️ Winter PM', start: 17, season: 'winter', note: 'PSE\'s winter peak (Dec–Feb) typically falls 7–10 AM and/or 5–10 PM on days below 30°F, and lasts 4–6 hours.' },
+            summer: { label: '☀️ Summer PM', start: 15, season: 'summer', note: 'PSE\'s smaller summer peak (Jul–Aug) typically falls 3–9 PM on days above 85°F, and lasts 3–4 hours.' }
+        };
+
+        // From PSE's 2026 DR RFP (Appendix B and section 1.2): [year, winter peak MW, summer peak MW].
+        const PEAK_HISTORY = [
+            [2019, 4498, 3196], [2020, 4245, 3418], [2021, 4741, 4036], [2022, 4807, 3819],
+            [2023, 4329, 3853], [2024, 4957, 3832], [2025, 4629, 3756]
+        ];
+        const DR_CURRENT_MW = 129;
+        const DR_NEED_2030_MW = 500;
+
+        const SOURCES = [
+            ['PSE Flex C&I program page', 'https://www.pse.com/en/business-incentives/energy-management-programs/flex-c-i'],
+            ['PSE Flex for Business options', 'https://www.pse.com/en/business-incentives/energy-management-programs/flex-for-business'],
+            ['PSE Demand Response terms and conditions', 'https://www.pse.com/en/rebates/PSE-flex/PSE-Demand-Response-terms-and-conditions'],
+            ['PSE 2026 Demand Response RFP', 'https://www.pse.com/en/pages/energy-supply/acquiring-energy/2026-Demand-Response-Request-for-Proposals'],
+            ['Schedule 26 rates (OpenEI)', 'https://apps.openei.org/USURDB/rate/view/69ef9df37b85aa692d050dba'],
+            ['CETA: coal phase-out, RCW 19.405.030', 'https://app.leg.wa.gov/rcw/default.aspx?cite=19.405.030'],
+            ['CETA: 2030 standard, RCW 19.405.040', 'https://app.leg.wa.gov/rcw/default.aspx?cite=19.405.040']
+        ];
+
+        // Shares of the shifted energy that come back before (pre) and after (post) the event, by hour.
+        const RECOVERY = {
+            uncontrolled: { label: 'Uncontrolled restart', pre: [], post: [0.45, 0.25], desc: 'Everything comes back on when the event ends. The snapback can set a new peak.' },
+            precondition: { label: 'Pre-condition + ramp', pre: [0.15, 0.2], post: [0.15, 0.1], desc: 'Pre-heat or pre-cool and bank production before the event, then ramp loads back gradually.' },
+            staggered: { label: 'Staggered restart', pre: [], post: [], fill: { share: 0.65, hours: 8 }, desc: 'Controls bring loads back in waves, filling the lowest-load hours over the next eight hours (e.g. managed overnight charging).' }
+        };
+
+        // Prior 10 non-event weekdays, relative to the event day. Event days are the coldest or hottest days.
+        const PRIOR_DAYS = [0.96, 0.89, 0.98, 0.87, 0.94, 0.92, 0.90, 0.97, 0.88, 0.95];
+
+        // Illustrative marginal emission factors (t CO2 / MWh).
+        const PEAK_EF = 0.55;
+        const OFFPEAK_EF = 0.40;
+
+        const CHECKLIST = [
+            { id: 'meter', label: '15-minute interval meter (AMI) on the account', why: 'Needed to measure performance against your baseline.' },
+            { id: 'controls', label: 'BMS or load controls on curtailable equipment', why: 'Lets you shed load reliably on short notice.' },
+            { id: 'openadr', label: 'Event notifications set up (text, email, phone) or an automated signal connection', why: 'PSE notifies you before dispatch; automation (e.g. OpenADR) responds without staff.' },
+            { id: 'contact', label: 'Named event contact and backup', why: 'Someone to confirm, monitor, and override if needed.' },
+            { id: 'plan', label: 'Written curtailment plan for each load', why: 'Spells out what turns down, by how much, and in what order.' },
+            { id: 'override', label: 'Override procedure for critical operations', why: 'Protects safety, product, and people if conditions change.' },
+            { id: 'test', label: 'Test event scheduled before the season', why: 'Confirms the kW you can safely commit.' }
+        ];
+
+        const buildDay = ({ profile, peakDemand, curtailableKW, shiftShare, pf, start, dur, recovery, drOn }) => {
+            const baseline = profile.map((p) => p * peakDemand);
+            const dr = baseline.slice();
+            const kind = Array(24).fill('normal');
+            const isEvent = (h) => mod24(h - start) < dur;
+            let eventKWh = 0;
+            if (drOn) {
+                for (let h = 0; h < 24; h++) {
+                    if (isEvent(h)) {
+                        const r = curtailableKW * pf * profile[h];
+                        dr[h] -= r;
+                        eventKWh += r;
+                        kind[h] = 'event';
+                    }
+                }
+            }
+            const shiftedKWh = eventKWh * shiftShare;
+            let addedKWh = 0;
+            if (drOn && shiftedKWh > 0) {
+                recovery.pre.forEach((f, i) => {
+                    const h = mod24(start - recovery.pre.length + i);
+                    dr[h] += shiftedKWh * f;
+                    addedKWh += shiftedKWh * f;
+                    kind[h] = 'pre';
+                });
+                recovery.post.forEach((f, i) => {
+                    const h = mod24(start + dur + i);
+                    dr[h] += shiftedKWh * f;
+                    addedKWh += shiftedKWh * f;
+                    kind[h] = 'rebound';
+                });
+                if (recovery.fill) {
+                    // Valley-fill: return energy into the hours with the most headroom below 95% of the normal peak.
+                    const cap = Math.max(...baseline) * 0.95;
+                    const fillHours = Array.from({ length: recovery.fill.hours }, (_, i) => mod24(start + dur + i));
+                    const headroom = fillHours.map((h) => Math.max(0, cap - dr[h]));
+                    const totalHeadroom = sum(headroom);
+                    const energy = shiftedKWh * recovery.fill.share;
+                    const inHeadroom = Math.min(energy, totalHeadroom);
+                    const overflow = energy - inHeadroom;
+                    fillHours.forEach((h, i) => {
+                        const add = (totalHeadroom > 0 ? inHeadroom * headroom[i] / totalHeadroom : 0) + overflow / fillHours.length;
+                        if (add > 0.5) {
+                            dr[h] += add;
+                            kind[h] = 'rebound';
+                        }
+                        addedKWh += add;
+                    });
+                }
+            }
+            const argmax = (a) => a.reduce((best, v, i) => (v > a[best] + 1e-9 ? i : best), 0);
+            const baseMaxHour = argmax(baseline);
+            const drMaxHour = argmax(dr);
+            return {
+                baseline, dr, kind, isEvent, eventKWh, addedKWh,
+                perfKW: drOn ? eventKWh / dur : 0,
+                baseMax: baseline[baseMaxHour], baseMaxHour,
+                drMax: dr[drMaxHour], drMaxHour
+            };
+        };
+
+        const initFacility = () => Object.fromEntries(
+            Object.entries(SEGMENTS).map(([k, s]) => [k, JSON.parse(JSON.stringify(s.loads))])
+        );
+
+        // ---------- Small components ----------
+        const TabButton = ({ active, label, onClick }) => (
+            <button
+                onClick={onClick}
+                style={{
+                    padding: '12px 16px',
+                    borderRadius: '10px',
+                    border: 'none',
+                    background: active ? 'rgba(255,255,255,0.1)' : 'transparent',
+                    color: active ? '#fff' : C.muted,
+                    cursor: 'pointer',
+                    fontSize: '13px',
+                    fontWeight: '500',
+                    transition: 'all 0.2s ease',
+                    whiteSpace: 'nowrap'
+                }}
+            >
+                {label}
+            </button>
+        );
+
+        const Segmented = ({ options, value, onChange }) => (
+            <div style={{ display: 'flex', gap: '4px', padding: '4px', background: 'rgba(0,0,0,0.25)', borderRadius: '10px', flexWrap: 'wrap' }}>
+                {options.map((o) => (
+                    <button
+                        key={o.value}
+                        onClick={() => onChange(o.value)}
+                        style={{
+                            flex: 1,
+                            padding: '8px 10px',
+                            borderRadius: '8px',
+                            border: 'none',
+                            background: value === o.value ? 'rgba(74, 222, 128, 0.18)' : 'transparent',
+                            color: value === o.value ? C.green : C.sub,
+                            fontSize: '13px',
+                            fontWeight: '500',
+                            cursor: 'pointer',
+                            whiteSpace: 'nowrap',
+                            fontFamily: 'inherit'
+                        }}
+                    >
+                        {o.label}
+                    </button>
+                ))}
+            </div>
+        );
+
+        const Slider = ({ label, display, value, min, max, step = 1, onChange, hint }) => (
+            <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', marginBottom: '8px' }}>
+                    <span style={{ fontSize: '13px', color: C.sub }}>{label}</span>
+                    <span style={{ fontSize: '13px', color: '#fff', fontWeight: '600' }}>{display}</span>
+                </div>
+                <input type="range" min={min} max={max} step={step} value={value} onChange={(e) => onChange(Number(e.target.value))} />
+                {hint && <div style={{ fontSize: '11px', color: C.muted, marginTop: '6px', lineHeight: 1.4 }}>{hint}</div>}
+            </div>
+        );
+
+        const NumberField = ({ label, value, onChange, prefix, hint }) => (
+            <div>
+                <div style={{ fontSize: '13px', color: C.sub, marginBottom: '8px' }}>{label}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    {prefix && <span style={{ color: C.muted, fontSize: '13px' }}>{prefix}</span>}
+                    <input type="number" min="0" value={value} onChange={(e) => onChange(Math.max(0, Number(e.target.value) || 0))} />
+                </div>
+                {hint && <div style={{ fontSize: '11px', color: C.muted, marginTop: '6px', lineHeight: 1.4 }}>{hint}</div>}
+            </div>
+        );
+
+        // What the simulator knows, what it assumes, and what nobody can know before enrollment.
+        const ASSUMPTIONS = {
+            confirmed: [
+                'Flex C&I pays up to $65/kW per season (up to $130/kW a year), with no-cost enrollment support from PSE and Enel',
+                'Flex Business ($1/kWh, $50 to enroll) and Flex Smart ($35/kW per season) are for Schedules 24 and 25 only',
+                'Flex events: Nov 1 – Mar 31 and May 1 – Sep 30, 7 AM – 10 PM, 4 hours or less',
+                'No financial penalties appear in PSE\'s published terms',
+                'PSE\'s winter and summer peaks for 2019–2025, peak hours, and 2030 demand response need (2026 DR RFP)',
+                'CETA milestones (RCW 19.405)'
+            ],
+            modeled: [
+                ['Flex C&I pay = lower of committed kW and average performance, × rate × 2 seasons', 'PSE says pay "combines" both but doesn\'t publish the formula.'],
+                ['6 / 12 / 30 events a year in the scenarios', 'PSE called 7 events in its first winter; Flex Business caps events at 15 per season.'],
+                ['Schedule 26 demand rates ($18.88 winter, $11.67 summer) for every segment', 'Taken from OpenEI\'s copy of the tariff; winter months (Oct – Mar) from a third-party guide. Sites on Schedules 24 or 25 pay different rates.'],
+                ['Energy at about $0.12/kWh', 'Schedule 26 energy charge plus adjustments, rounded.'],
+                ['Same performance in winter and summer', 'The simulator models one event window at a time.'],
+                ['Load shapes, segment bills, and sheddable shares', 'Typical values for each building type; edit them in "Model your facility".'],
+                ['Controls cost, 10%/yr maintenance, and emissions factors', 'Placeholders. Replace with a contractor quote and hourly emissions data.']
+            ],
+            unknown: [
+                'Your actual Flex C&I rate, and how PSE weights committed kW against performance',
+                'Flex C&I event caps, maximum event length, and notice time',
+                'Emergency event terms (only Peak events are modeled)',
+                'The baseline and adjustment method PSE uses to settle your events',
+                'Whether PSE installs metering or controls at your site'
+            ]
+        };
+
+        const AssumedTag = ({ note }) => (
+            <a
+                href="#assumptions"
+                title={note ? `Assumed: ${note}` : 'Assumed value. See "What\'s sourced vs. assumed".'}
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                    display: 'inline-block', marginLeft: '6px', padding: '1px 7px', borderRadius: '6px',
+                    fontSize: '10px', fontWeight: '600', letterSpacing: '0.3px', verticalAlign: 'middle',
+                    color: C.amber, background: 'rgba(251, 191, 36, 0.15)', border: '1px solid rgba(251, 191, 36, 0.35)',
+                    textDecoration: 'none', cursor: 'help', textTransform: 'uppercase'
+                }}
+            >
+                assumed
+            </a>
+        );
+
+        const SectionHeader = ({ title, desc }) => (
+            <div style={{ marginBottom: '24px' }}>
+                <h2 style={{ fontSize: '20px', fontWeight: '600', margin: '0 0 8px 0', color: '#fff' }}>{title}</h2>
+                {desc && <p style={{ fontSize: '14px', color: C.muted, margin: 0, lineHeight: 1.5 }}>{desc}</p>}
+            </div>
+        );
+
+        const MetricCard = ({ label, value, sub, color }) => (
+            <div style={{
+                padding: '20px',
+                borderRadius: '16px',
+                background: `linear-gradient(135deg, ${color}1a 0%, ${color}0d 100%)`,
+                border: `1px solid ${color}33`
+            }}>
+                <div style={{ fontSize: '12px', color, fontWeight: '600', marginBottom: '8px', letterSpacing: '0.3px' }}>{label}</div>
+                <div style={{ fontSize: '28px', fontWeight: '700', color: '#fff' }}>{value}</div>
+                {sub && <div style={{ fontSize: '12px', color: C.muted, marginTop: '4px' }}>{sub}</div>}
+            </div>
+        );
+
+        const Stat = ({ value, label, color }) => (
+            <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: '26px', fontWeight: '700', color }}>{value}</div>
+                <div style={{ fontSize: '12px', color: C.muted }}>{label}</div>
+            </div>
+        );
+
+        const SummaryRow = ({ label, value, color, strong }) => (
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', padding: strong ? '16px 0 4px' : '12px 0', borderBottom: strong ? 'none' : '1px solid rgba(255,255,255,0.08)' }}>
+                <span style={{ color: strong ? '#fff' : C.sub, fontWeight: strong ? '600' : '400', fontSize: strong ? '16px' : '14px' }}>{label}</span>
+                <span style={{ color, fontWeight: strong ? '700' : '600', fontSize: strong ? '20px' : '14px' }}>{value}</span>
+            </div>
+        );
+
+        // ---------- App ----------
         const CIDemandResponseSimulator = () => {
             const [activeTab, setActiveTab] = useState('profile');
-            const [selectedSegment, setSelectedSegment] = useState('commercial');
-            const [selectedProgram, setSelectedProgram] = useState('capacity');
+            const [segKey, setSegKey] = useState('commercial');
+            const [facility, setFacility] = useState(initFacility);
+            const [programKey, setProgramKey] = useState('flexci');
             const [drEnabled, setDrEnabled] = useState(true);
-            const [currentHour, setCurrentHour] = useState(14);
+            const [windowKey, setWindowKey] = useState('winterAM');
+            const [eventDuration, setEventDuration] = useState(3);
+            const [recoveryKey, setRecoveryKey] = useState('precondition');
+            const [performance, setPerformance] = useState(0.85);
+            const [currentHour, setCurrentHour] = useState(7);
             const [isAnimating, setIsAnimating] = useState(false);
-            const [eventDuration, setEventDuration] = useState(4);
+            const [commitPct, setCommitPct] = useState(0.75);
+            const [peakAligned, setPeakAligned] = useState(3);
+            const [costOverrides, setCostOverrides] = useState({});
+            const [rebatePerKW, setRebatePerKW] = useState(0);
+            const [discountRate, setDiscountRate] = useState(0.08);
+            const [enrollPath, setEnrollPath] = useState('manual');
+            const [flexCIRate, setFlexCIRate] = useState(PROGRAMS.flexci.rate);
+            const [checklist, setChecklist] = useState({});
+            const [sitesEnrolled, setSitesEnrolled] = useState(100);
+            const [ctaClicked, setCtaClicked] = useState(false);
 
-            // Customer segment configurations
-            const segments = {
-                smb: {
-                    name: 'Small-Medium Business',
-                    icon: '🏪',
-                    examples: 'Restaurant, Retail Store, Small Office',
-                    peakDemand: 75, // kW
-                    avgMonthlyBill: 4500,
-                    demandCharge: 18, // $/kW
-                    loads: {
-                        hvac: { name: 'HVAC System', kw: 35, curtailable: true, icon: '❄️', critical: false },
-                        lighting: { name: 'Lighting', kw: 15, curtailable: true, icon: '💡', critical: false },
-                        refrigeration: { name: 'Refrigeration', kw: 20, curtailable: false, icon: '🧊', critical: true },
-                        equipment: { name: 'Equipment/POS', kw: 5, curtailable: false, icon: '🖥️', critical: true }
-                    }
-                },
-                commercial: {
-                    name: 'Commercial',
-                    icon: '🏢',
-                    examples: 'Office Building, Hospital, University',
-                    peakDemand: 500,
-                    avgMonthlyBill: 35000,
-                    demandCharge: 22,
-                    loads: {
-                        hvac: { name: 'HVAC/Chiller', kw: 250, curtailable: true, icon: '❄️', critical: false },
-                        lighting: { name: 'Lighting Systems', kw: 100, curtailable: true, icon: '💡', critical: false },
-                        elevators: { name: 'Elevators', kw: 50, curtailable: false, icon: '🛗', critical: true },
-                        dataCenter: { name: 'Data/IT Systems', kw: 80, curtailable: false, icon: '🖥️', critical: true },
-                        other: { name: 'Misc. Loads', kw: 20, curtailable: true, icon: '⚡', critical: false }
-                    }
-                },
-                industrial: {
-                    name: 'Industrial',
-                    icon: '🏭',
-                    examples: 'Manufacturing, Cold Storage, Processing',
-                    peakDemand: 2000,
-                    avgMonthlyBill: 125000,
-                    demandCharge: 20,
-                    loads: {
-                        process: { name: 'Process Equipment', kw: 800, curtailable: true, icon: '⚙️', critical: false },
-                        hvac: { name: 'HVAC/Ventilation', kw: 300, curtailable: true, icon: '❄️', critical: false },
-                        refrigeration: { name: 'Industrial Cooling', kw: 500, curtailable: false, icon: '🧊', critical: true },
-                        compressors: { name: 'Compressors', kw: 250, curtailable: true, icon: '🔧', critical: false },
-                        lighting: { name: 'Facility Lighting', kw: 150, curtailable: true, icon: '💡', critical: false }
-                    }
-                },
-                largeLoad: {
-                    name: 'Large Load',
-                    icon: '⚡',
-                    examples: 'Data Center, Water Treatment, Campus',
-                    peakDemand: 5000,
-                    avgMonthlyBill: 400000,
-                    demandCharge: 18,
-                    loads: {
-                        computing: { name: 'Computing Load', kw: 2500, curtailable: false, icon: '🖥️', critical: true },
-                        cooling: { name: 'Cooling Systems', kw: 1500, curtailable: true, icon: '❄️', critical: false },
-                        backup: { name: 'Backup Systems', kw: 400, curtailable: false, icon: '🔋', critical: true },
-                        lighting: { name: 'Facility Lighting', kw: 200, curtailable: true, icon: '💡', critical: false },
-                        auxiliary: { name: 'Auxiliary Systems', kw: 400, curtailable: true, icon: '⚡', critical: false }
-                    }
-                }
-            };
+            const seg = SEGMENTS[segKey];
+            const loads = facility[segKey];
+            const loadList = Object.entries(loads);
+            const program = PROGRAMS[programKey];
+            const win = EVENT_WINDOWS[windowKey];
+            const start = win.start;
+            const season = win.season;
+            const profile = seg.profiles[season];
+            const recovery = RECOVERY[recoveryKey];
+            const controlsCostPerKW = costOverrides[segKey] ?? seg.controlsCost;
 
-            // DR Program options
-            const programs = {
-                capacity: {
-                    name: 'Capacity Program',
-                    type: 'Firm commitment',
-                    payment: 'Monthly $/kW',
-                    rate: 8, // $/kW/month
-                    penalty: true,
-                    response: '30 min notice',
-                    events: '10-15/year',
-                    desc: 'Commit to reduce load when called. Higher payments, penalties for non-performance.'
-                },
-                energy: {
-                    name: 'Energy Program',
-                    type: 'Economic dispatch',
-                    payment: '$/kWh reduced',
-                    rate: 0.50, // $/kWh
-                    penalty: false,
-                    response: 'Day-ahead',
-                    events: '20-40/year',
-                    desc: 'Get paid for energy you don\'t use during events. Flexible participation, no penalties.'
-                },
-                emergency: {
-                    name: 'Emergency DR',
-                    type: 'Grid emergency',
-                    payment: 'Premium $/kWh',
-                    rate: 1.25, // $/kWh
-                    penalty: true,
-                    response: '10 min notice',
-                    events: '2-5/year',
-                    desc: 'Called only during grid emergencies. Highest payments, mandatory response.'
-                }
-            };
+            const peakDemand = sum(loadList.map(([, l]) => l.kw));
+            const curtailableKW = sum(loadList.map(([, l]) => l.kw * l.pct / 100));
+            const shiftableKW = sum(loadList.filter(([, l]) => l.shift).map(([, l]) => l.kw * l.pct / 100));
+            const shiftShare = curtailableKW > 0 ? shiftableKW / curtailableKW : 0;
+            const firmKW = peakDemand - curtailableKW;
+            const hvacKW = loads.hvac ? loads.hvac.kw * loads.hvac.pct / 100 : 0;
+            const hvacShare = curtailableKW > 0 ? hvacKW / curtailableKW : 0;
+            const annualBill = seg.avgMonthlyBill * (peakDemand / seg.basePeak) * 12;
+            const schedule = scheduleFor(peakDemand);
+            const isEligible = (pk) => PROGRAMS[pk].schedules.includes(schedule);
+            const demandRate = season === 'winter' ? TARIFF.winterDemand : TARIFF.summerDemand;
+            const rateFor = (pk) => (pk === 'flexci' ? flexCIRate : PROGRAMS[pk].rate);
 
-            const currentSegment = segments[selectedSegment];
-            const currentProgram = programs[selectedProgram];
+            const eventHours = Array.from({ length: eventDuration }, (_, i) => mod24(start + i));
+            // What the curtailable loads can actually shed in this window, since they aren't at full load every hour.
+            const eventPotentialKW = curtailableKW * sum(eventHours.map((h) => profile[h])) / eventDuration;
+            const committedKW = eventPotentialKW * commitPct;
 
-            // Calculate curtailable load
-            const curtailableKW = Object.values(currentSegment.loads)
-                .filter(l => l.curtailable)
-                .reduce((sum, l) => sum + l.kw, 0);
+            const dayArgs = { profile, peakDemand, curtailableKW, shiftShare, start, dur: eventDuration, recovery };
+            const day = buildDay({ ...dayArgs, pf: performance, drOn: drEnabled });
 
-            const criticalKW = Object.values(currentSegment.loads)
-                .filter(l => l.critical)
-                .reduce((sum, l) => sum + l.kw, 0);
-
-            // Business case calculations
-            const calculateBusinessCase = () => {
-                const annualEvents = selectedProgram === 'capacity' ? 12 : selectedProgram === 'energy' ? 30 : 3;
-                const avgEventHours = eventDuration;
-
-                let incentiveRevenue = 0;
-                if (selectedProgram === 'capacity') {
-                    incentiveRevenue = curtailableKW * currentProgram.rate * 12; // Monthly payments
+            const computeCase = (pk, pf, aligned, events) => {
+                const prog = PROGRAMS[pk];
+                const d = buildDay({ ...dayArgs, pf, drOn: true });
+                const rate = rateFor(pk);
+                const shortfallKW = pk === 'flexci' ? Math.max(0, committedKW - d.perfKW) : 0;
+                let incentive = 0;
+                if (prog.basis === 'kw-season') {
+                    // Modeled as committed kW, capped by average performance, times the seasonal rate.
+                    incentive = Math.min(d.perfKW, committedKW) * rate * SEASONS_PER_YEAR;
+                } else if (prog.basis === 'kw-season-hvac') {
+                    incentive = d.perfKW * hvacShare * rate * SEASONS_PER_YEAR;
                 } else {
-                    incentiveRevenue = curtailableKW * avgEventHours * annualEvents * currentProgram.rate;
+                    incentive = d.eventKWh * events * rate;
                 }
-
-                const demandChargeSavings = curtailableKW * currentSegment.demandCharge * 12 * 0.3; // Assume 30% peak reduction
-                const implementationCost = curtailableKW * 15; // $15/kW for controls
-                const annualMaintenance = implementationCost * 0.1;
-                const totalFirstYear = incentiveRevenue + demandChargeSavings - implementationCost - annualMaintenance;
-                const totalOngoing = incentiveRevenue + demandChargeSavings - annualMaintenance;
-                const paybackMonths = implementationCost / ((incentiveRevenue + demandChargeSavings) / 12);
-
+                const shortfallLoss = shortfallKW * rate * SEASONS_PER_YEAR;
+                const peakReductionKW = d.baseMax - d.drMax;
+                const demandSavings = peakReductionKW * demandRate * aligned;
+                const energySavings = (d.eventKWh - d.addedKWh) * events * TARIFF.energy;
+                const grossControls = curtailableKW * controlsCostPerKW;
+                const automated = enrollPath === 'automated';
+                const upfront = automated ? Math.max(0, grossControls - curtailableKW * rebatePerKW) : 0;
+                const maintenance = automated ? grossControls * 0.1 : 0;
+                const annualNet = incentive + demandSavings + energySavings - maintenance;
+                let npv = -upfront;
+                for (let t = 1; t <= 10; t++) npv += annualNet / Math.pow(1 + discountRate, t);
+                const paybackMonths = upfront === 0 ? 0 : annualNet > 0 ? (upfront / annualNet) * 12 : null;
                 return {
-                    incentiveRevenue: Math.round(incentiveRevenue),
-                    demandChargeSavings: Math.round(demandChargeSavings),
-                    implementationCost: Math.round(implementationCost),
-                    annualMaintenance: Math.round(annualMaintenance),
-                    totalFirstYear: Math.round(totalFirstYear),
-                    totalOngoing: Math.round(totalOngoing),
-                    paybackMonths: Math.round(paybackMonths),
-                    annualEvents
+                    d, pf, aligned, events, rate, shortfallKW, shortfallLoss, incentive,
+                    peakReductionKW, demandSavings, energySavings, upfront, maintenance, annualNet, npv, paybackMonths
                 };
             };
 
-            const businessCase = calculateBusinessCase();
+            const expected = computeCase(programKey, performance, peakAligned, EVENTS.expected);
+            const scenarios = [
+                { key: 'worst', label: 'Downside', color: C.red, c: computeCase(programKey, Math.max(0.3, performance - 0.15), Math.max(0, peakAligned - 2), EVENTS.low) },
+                { key: 'expected', label: 'Expected', color: C.blue, c: expected },
+                { key: 'best', label: 'Upside', color: C.green, c: computeCase(programKey, Math.min(1, performance + 0.1), Math.min(12, peakAligned + 2), EVENTS.high) }
+            ];
 
-            // Load profile by hour (normalized 0-1)
-            const getLoadProfile = (hour) => {
-                const profiles = {
-                    smb: [0.2, 0.2, 0.2, 0.2, 0.2, 0.3, 0.5, 0.7, 0.9, 1.0, 1.0, 1.0, 0.95, 0.9, 0.85, 0.8, 0.85, 0.9, 0.95, 0.8, 0.6, 0.4, 0.3, 0.25],
-                    commercial: [0.3, 0.3, 0.3, 0.3, 0.3, 0.35, 0.5, 0.7, 0.9, 0.95, 1.0, 1.0, 0.95, 0.95, 1.0, 1.0, 0.95, 0.85, 0.7, 0.5, 0.4, 0.35, 0.3, 0.3],
-                    industrial: [0.6, 0.6, 0.6, 0.6, 0.6, 0.7, 0.85, 0.95, 1.0, 1.0, 1.0, 0.95, 0.9, 0.95, 1.0, 1.0, 0.95, 0.9, 0.8, 0.7, 0.65, 0.6, 0.6, 0.6],
-                    largeLoad: [0.85, 0.85, 0.85, 0.85, 0.85, 0.85, 0.9, 0.95, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.95, 0.9, 0.9, 0.88, 0.85, 0.85, 0.85]
-                };
-                return profiles[selectedSegment][hour];
-            };
-
-            const getCurtailedProfile = (hour) => {
-                const baseline = getLoadProfile(hour);
-                const isPeakEvent = hour >= 14 && hour < 14 + eventDuration;
-                if (isPeakEvent && drEnabled) {
-                    const curtailmentRatio = curtailableKW / currentSegment.peakDemand;
-                    return baseline * (1 - curtailmentRatio * 0.8); // 80% of curtailable load reduced
-                }
-                return baseline;
-            };
+            const formatPayback = (m) => (m === null ? 'Never' : m === 0 ? 'Immediate' : `${Math.round(m)} mo`);
 
             useEffect(() => {
                 if (isAnimating) {
@@ -226,92 +618,165 @@
                 }
             }, [isAnimating]);
 
-            const formatHour = (hour) => {
-                if (hour === 0) return '12 AM';
-                if (hour < 12) return `${hour} AM`;
-                if (hour === 12) return '12 PM';
-                return `${hour - 12} PM`;
+            useEffect(() => {
+                setCurrentHour(start);
+            }, [windowKey]);
+
+            const setLoad = (key, field, value) => {
+                setFacility((f) => ({
+                    ...f,
+                    [segKey]: { ...f[segKey], [key]: { ...f[segKey][key], [field]: value } }
+                }));
+            };
+            const resetFacility = () => {
+                setFacility((f) => ({ ...f, [segKey]: JSON.parse(JSON.stringify(SEGMENTS[segKey].loads)) }));
             };
 
             const hours = Array.from({ length: 24 }, (_, i) => i);
 
-            const TabButton = ({ id, label }) => (
-                <button
-                    onClick={() => setActiveTab(id)}
-                    style={{
-                        padding: '12px 16px',
-                        borderRadius: '10px',
-                        border: 'none',
-                        background: activeTab === id ? 'rgba(255,255,255,0.1)' : 'transparent',
-                        color: activeTab === id ? '#fff' : '#6b8299',
-                        cursor: 'pointer',
-                        fontSize: '13px',
-                        fontWeight: '500',
-                        transition: 'all 0.2s ease',
-                        whiteSpace: 'nowrap'
-                    }}
-                >
-                    {label}
-                </button>
-            );
+            // ---------- Settlement (baseline) ----------
+            const settlement = (() => {
+                const d = expected.d;
+                const avgF = sum(PRIOR_DAYS) / PRIOR_DAYS.length;
+                // Adjustment window: two hours, ending before any pre-conditioning starts.
+                const adjHours = [mod24(start - 4), mod24(start - 3)];
+                const windowActual = sum(adjHours.map((h) => d.dr[h]));
+                const windowAvg = sum(adjHours.map((h) => d.baseline[h] * avgF));
+                const rawFactor = windowActual / windowAvg;
+                const factor = Math.min(1.2, Math.max(0.8, rawFactor));
+                const rows = eventHours.map((h) => {
+                    const avg = d.baseline[h] * avgF;
+                    const adj = avg * factor;
+                    const measured = d.dr[h];
+                    return { h, avg, adj, measured, red: adj - measured, redUnadj: avg - measured };
+                });
+                const perf = sum(rows.map((r) => r.red)) / rows.length;
+                const perfUnadj = sum(rows.map((r) => r.redUnadj)) / rows.length;
+                const kWh = sum(rows.map((r) => Math.max(0, r.red)));
+                const priorDays = PRIOR_DAYS.map((f) => sum(eventHours.map((h) => d.baseline[h] * f)) / eventDuration);
+                const eventDayLoad = sum(eventHours.map((h) => d.baseline[h])) / eventDuration;
+                return { adjHours, factor, rows, perf, perfUnadj, kWh, priorDays, eventDayLoad };
+            })();
 
-            const SegmentCard = ({ id, segment, selected }) => (
-                <div
-                    onClick={() => setSelectedSegment(id)}
-                    style={{
-                        padding: '20px',
-                        borderRadius: '16px',
-                        border: `2px solid ${selected ? '#4ade80' : 'rgba(255,255,255,0.08)'}`,
-                        background: selected ? 'rgba(74, 222, 128, 0.08)' : 'rgba(255,255,255,0.02)',
-                        cursor: 'pointer',
-                        transition: 'all 0.2s ease'
-                    }}
-                >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
-                        <span style={{ fontSize: '28px' }}>{segment.icon}</span>
-                        <div>
-                            <div style={{ fontSize: '15px', fontWeight: '600', color: '#fff' }}>{segment.name}</div>
-                            <div style={{ fontSize: '12px', color: '#6b8299' }}>{segment.examples}</div>
-                        </div>
-                    </div>
-                    <div style={{ display: 'flex', gap: '16px', marginTop: '12px', fontSize: '12px' }}>
-                        <div>
-                            <div style={{ color: '#6b8299' }}>Peak Demand</div>
-                            <div style={{ color: '#38bdf8', fontWeight: '600' }}>{segment.peakDemand} kW</div>
-                        </div>
-                        <div>
-                            <div style={{ color: '#6b8299' }}>Avg. Bill</div>
-                            <div style={{ color: '#4ade80', fontWeight: '600' }}>${(segment.avgMonthlyBill / 1000).toFixed(0)}k/mo</div>
-                        </div>
-                    </div>
-                </div>
-            );
+            // ---------- Grid & carbon ----------
+            const annualEventMWh = (expected.d.eventKWh * expected.events) / 1000;
+            const annualAddedMWh = (expected.d.addedKWh * expected.events) / 1000;
+            const tonsAvoided = annualEventMWh * PEAK_EF - annualAddedMWh * OFFPEAK_EF;
+            const portfolioMW = (expected.d.perfKW * sitesEnrolled) / 1000;
 
-            // Operational impact scenarios
-            const getOperationalImpacts = () => {
+            const readiness = Math.round((CHECKLIST.filter((c) => checklist[c.id]).length / CHECKLIST.length) * 100);
+
+            const getImpacts = () => {
+                const cond = season === 'winter' ? 'Pre-heat' : 'Pre-cool';
+                const drift = season === 'winter' ? 'drops' : 'rises';
                 const impacts = {
                     smb: [
-                        { load: 'HVAC', impact: 'Temperature rises 2-4°F', severity: 'low', mitigation: 'Pre-cool before event' },
+                        { load: 'HVAC', impact: `Temperature ${drift} 2-4°F`, severity: 'low', mitigation: `${cond} before event` },
                         { load: 'Lighting', impact: 'Dim to 50% in non-critical areas', severity: 'low', mitigation: 'Maintain task lighting' }
                     ],
                     commercial: [
-                        { load: 'HVAC/Chiller', impact: 'Temperature rises 3-5°F', severity: 'medium', mitigation: 'Pre-cool building, notify occupants' },
+                        { load: 'HVAC/Heat Pumps/Chiller', impact: `Temperature ${drift} 3-5°F`, severity: 'medium', mitigation: `${cond} building, notify occupants` },
                         { load: 'Lighting', impact: 'Reduce to 70% in common areas', severity: 'low', mitigation: 'Maintain office lighting' },
                         { load: 'Misc. Loads', impact: 'Non-essential equipment off', severity: 'low', mitigation: 'Schedule around events' }
                     ],
                     industrial: [
                         { load: 'Process Equipment', impact: 'Reduce production rate 20-30%', severity: 'medium', mitigation: 'Shift production to off-peak' },
-                        { load: 'HVAC', impact: 'Warehouse temp rises', severity: 'low', mitigation: 'Pre-cool, ventilation only' },
+                        { load: 'HVAC', impact: `Warehouse temperature ${drift}`, severity: 'low', mitigation: `${cond}, ventilation only` },
                         { load: 'Compressors', impact: 'Cycle compressors', severity: 'medium', mitigation: 'Build pressure before event' }
                     ],
                     largeLoad: [
                         { load: 'Cooling Systems', impact: 'Raise setpoint 2-3°F', severity: 'medium', mitigation: 'Pre-cool, monitor thermal limits' },
                         { load: 'Auxiliary Systems', impact: 'Reduce non-critical load', severity: 'low', mitigation: 'Automated load shedding' },
                         { load: 'Facility Lighting', impact: 'Dim to 60%', severity: 'low', mitigation: 'Emergency lighting maintained' }
+                    ],
+                    fleet: [
+                        { load: 'EV Fleet Chargers', impact: 'Pause or throttle charging', severity: 'medium', mitigation: 'Charge to target before event; prioritize vehicles by departure time' },
+                        { load: 'Depot HVAC', impact: `Temperature ${drift} 2-4°F`, severity: 'low', mitigation: `${cond} before event` },
+                        { load: 'Maintenance Shop', impact: 'Defer lifts, compressors, and welding', severity: 'low', mitigation: 'Schedule heavy work outside event hours' }
                     ]
                 };
-                return impacts[selectedSegment];
+                return [
+                    ...impacts[segKey],
+                    {
+                        load: 'Restart after event',
+                        impact: recovery.desc,
+                        severity: recoveryKey === 'uncontrolled' ? 'medium' : 'low',
+                        mitigation: recoveryKey === 'uncontrolled' ? 'Switch to a staggered restart to avoid a new peak' : 'Sequencing set up in controls'
+                    }
+                ];
             };
+
+            const SegmentCard = ({ id, segment }) => {
+                const selected = segKey === id;
+                const segPeak = sum(Object.values(facility[id]).map((l) => l.kw));
+                const segBill = segment.avgMonthlyBill * segPeak / segment.basePeak;
+                return (
+                    <div
+                        onClick={() => setSegKey(id)}
+                        style={{
+                            padding: '18px',
+                            borderRadius: '16px',
+                            border: `2px solid ${selected ? C.green : 'rgba(255,255,255,0.08)'}`,
+                            background: selected ? 'rgba(74, 222, 128, 0.08)' : 'rgba(255,255,255,0.02)',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s ease'
+                        }}
+                    >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+                            <span style={{ fontSize: '28px' }}>{segment.icon}</span>
+                            <div>
+                                <div style={{ fontSize: '15px', fontWeight: '600', color: '#fff' }}>{segment.name}</div>
+                                <div style={{ fontSize: '12px', color: C.muted }}>{segment.examples}</div>
+                            </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: '16px', marginTop: '12px', fontSize: '12px' }}>
+                            <div>
+                                <div style={{ color: C.muted }}>Peak Demand</div>
+                                <div style={{ color: C.blue, fontWeight: '600' }}>{num(segPeak)} kW</div>
+                            </div>
+                            <div>
+                                <div style={{ color: C.muted }}>Avg. Bill<AssumedTag note="Typical bill for this building type, not a PSE figure." /></div>
+                                <div style={{ color: C.green, fontWeight: '600' }}>${(segBill / 1000).toFixed(segBill < 10000 ? 1 : 0)}k/mo</div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            };
+
+            // ---------- Chart ----------
+            const chartMax = Math.max(day.baseMax, day.drMax) * 1.1;
+            const barColor = (h) => {
+                if (h === currentHour) return 'linear-gradient(180deg, #fbbf24, #f59e0b)';
+                if (!drEnabled) return day.isEvent(h) ? 'linear-gradient(180deg, #f87171, #ef4444)' : 'linear-gradient(180deg, rgba(56, 189, 248, 0.6), rgba(56, 189, 248, 0.3))';
+                switch (day.kind[h]) {
+                    case 'event': return 'linear-gradient(180deg, #4ade80, #22c55e)';
+                    case 'pre': return 'linear-gradient(180deg, #fdba74, #fb923c)';
+                    case 'rebound': return 'linear-gradient(180deg, #d8b4fe, #c084fc)';
+                    default: return 'linear-gradient(180deg, rgba(56, 189, 248, 0.6), rgba(56, 189, 248, 0.3))';
+                }
+            };
+            const shownAt = (h) => (drEnabled ? day.dr[h] : day.baseline[h]);
+            const peakInsight = (() => {
+                if (!drEnabled) return null;
+                const reduction = day.baseMax - day.drMax;
+                if (day.drMax > day.baseMax + 0.5) {
+                    return { color: C.red, text: `⚠️ The rebound at ${formatHour(day.drMaxHour)} sets a new peak of ${num(day.drMax)} kW, ${num(day.drMax - day.baseMax)} kW above your normal peak. That raises this month's demand charge. ${recoveryKey === 'staggered' ? 'Shed less load or shorten the event so the returning energy fits off-peak.' : 'Try a staggered restart.'}` };
+                }
+                if (reduction < 1) {
+                    return { color: C.amber, text: `Your facility peaks at ${formatHour(day.baseMaxHour)}, outside the ${formatWindow(start, eventDuration)} event. You still earn DR incentives, but this event won't lower your demand charge.` };
+                }
+                return { color: C.green, text: `✓ On event days, your billing peak drops from ${num(day.baseMax)} kW to ${num(day.drMax)} kW (−${num(reduction)} kW). It now falls at ${formatHour(day.drMaxHour)}.` };
+            })();
+
+            const tabs = [
+                ['profile', '📊 Load Profile'],
+                ['programs', '💰 DR Programs'],
+                ['settlement', '🧾 Baseline & Pay'],
+                ['business', '📈 Business Case'],
+                ['operations', '⚙️ Operations'],
+                ['grid', '🌎 Grid & Carbon'],
+                ['next', '✅ Next Steps']
+            ];
 
             return (
                 <div style={{
@@ -319,175 +784,133 @@
                     background: 'linear-gradient(165deg, #0a1628 0%, #1a2d4a 50%, #0d2137 100%)',
                     fontFamily: "'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif",
                     color: '#e8f0f7',
-                    padding: '40px 20px',
+                    padding: '40px 16px',
                     position: 'relative',
                     overflow: 'hidden'
                 }}>
                     <div style={{
-                        position: 'absolute',
-                        top: '10%',
-                        right: '5%',
-                        width: '400px',
-                        height: '400px',
+                        position: 'absolute', top: '10%', right: '5%', width: '400px', height: '400px',
                         background: 'radial-gradient(circle, rgba(74, 222, 128, 0.08) 0%, transparent 70%)',
-                        borderRadius: '50%',
-                        pointerEvents: 'none'
+                        borderRadius: '50%', pointerEvents: 'none'
                     }} />
                     <div style={{
-                        position: 'absolute',
-                        bottom: '20%',
-                        left: '10%',
-                        width: '300px',
-                        height: '300px',
+                        position: 'absolute', bottom: '20%', left: '10%', width: '300px', height: '300px',
                         background: 'radial-gradient(circle, rgba(56, 189, 248, 0.06) 0%, transparent 70%)',
-                        borderRadius: '50%',
-                        pointerEvents: 'none'
+                        borderRadius: '50%', pointerEvents: 'none'
                     }} />
 
                     <div style={{ maxWidth: '1200px', margin: '0 auto', position: 'relative' }}>
                         <header style={{ marginBottom: '36px', textAlign: 'center' }}>
                             <div style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '12px',
-                                marginBottom: '16px',
-                                padding: '8px 16px',
-                                background: 'rgba(74, 222, 128, 0.1)',
-                                borderRadius: '24px',
+                                display: 'inline-flex', alignItems: 'center', gap: '12px', marginBottom: '16px',
+                                padding: '8px 16px', background: 'rgba(74, 222, 128, 0.1)', borderRadius: '24px',
                                 border: '1px solid rgba(74, 222, 128, 0.2)'
                             }}>
-                                <div style={{
-                                    width: '10px',
-                                    height: '10px',
-                                    borderRadius: '50%',
-                                    background: '#4ade80',
-                                    boxShadow: '0 0 12px rgba(74, 222, 128, 0.6)'
-                                }} />
-                                <span style={{ fontSize: '13px', fontWeight: '500', letterSpacing: '0.5px', color: '#4ade80' }}>
+                                <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: C.green, boxShadow: '0 0 12px rgba(74, 222, 128, 0.6)' }} />
+                                <span style={{ fontSize: '13px', fontWeight: '500', letterSpacing: '0.5px', color: C.green }}>
                                     C&I DEMAND RESPONSE SIMULATOR
                                 </span>
                             </div>
                             <h1 style={{
-                                fontSize: 'clamp(28px, 5vw, 44px)',
-                                fontWeight: '700',
-                                margin: '0 0 12px 0',
+                                fontSize: 'clamp(28px, 5vw, 44px)', fontWeight: '700', margin: '0 0 12px 0',
                                 background: 'linear-gradient(135deg, #ffffff 0%, #94cff7 100%)',
-                                WebkitBackgroundClip: 'text',
-                                WebkitTextFillColor: 'transparent',
-                                letterSpacing: '-1px'
+                                WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', letterSpacing: '-1px'
                             }}>
                                 Reduce peak demand. Earn incentives.
                             </h1>
-                            <p style={{
-                                fontSize: '17px',
-                                color: '#8ba3bc',
-                                maxWidth: '650px',
-                                margin: '0 auto',
-                                lineHeight: '1.6'
-                            }}>
+                            <p style={{ fontSize: '17px', color: C.sub, maxWidth: '650px', margin: '0 auto', lineHeight: '1.6' }}>
                                 Explore how demand response helps commercial and industrial customers cut costs, earn revenue, and support grid reliability.
                             </p>
                         </header>
 
-                        {/* Segment Selector - Always visible */}
-                        <div style={{
-                            display: 'grid',
-                            gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
-                            gap: '12px',
-                            marginBottom: '24px'
-                        }}>
-                            {Object.entries(segments).map(([id, segment]) => (
-                                <SegmentCard key={id} id={id} segment={segment} selected={selectedSegment === id} />
+                        {/* Segment selector */}
+                        <div style={{ ...autoGrid(200), gap: '12px', marginBottom: '24px' }}>
+                            {Object.entries(SEGMENTS).map(([id, segment]) => (
+                                <SegmentCard key={id} id={id} segment={segment} />
                             ))}
                         </div>
 
+                        {/* Event settings: shared by every tab */}
+                        <div style={{ ...panel, padding: '24px' }}>
+                            <div style={{ ...autoGrid(250), gap: '24px' }}>
+                                <div>
+                                    <div style={{ fontSize: '13px', color: C.sub, marginBottom: '8px' }}>Event window</div>
+                                    <Segmented
+                                        value={windowKey}
+                                        onChange={setWindowKey}
+                                        options={Object.entries(EVENT_WINDOWS).map(([k, w]) => ({ value: k, label: w.label }))}
+                                    />
+                                    <div style={{ fontSize: '11px', color: C.muted, marginTop: '6px', lineHeight: 1.4 }}>{win.note}</div>
+                                </div>
+                                <Slider
+                                    label="Event duration"
+                                    display={`${eventDuration} hr · ${formatWindow(start, eventDuration)}`}
+                                    value={eventDuration} min={1} max={4}
+                                    onChange={setEventDuration}
+                                    hint="PSE Flex events run 4 hours or less, 7 AM – 10 PM on non-holidays."
+                                />
+                                <Slider
+                                    label="Delivered performance"
+                                    display={`${Math.round(performance * 100)}%`}
+                                    value={performance} min={0.3} max={1} step={0.05}
+                                    onChange={setPerformance}
+                                    hint="Share of curtailable load you actually shed. Drives the chart, payments, and penalties."
+                                />
+                                <div>
+                                    <div style={{ fontSize: '13px', color: C.sub, marginBottom: '8px' }}>Recovery strategy</div>
+                                    <Segmented
+                                        value={recoveryKey}
+                                        onChange={setRecoveryKey}
+                                        options={Object.entries(RECOVERY).map(([k, r]) => ({ value: k, label: r.label }))}
+                                    />
+                                    <div style={{ fontSize: '11px', color: C.muted, marginTop: '6px', lineHeight: 1.4 }}>{recovery.desc}</div>
+                                </div>
+                            </div>
+                        </div>
+
                         <div style={{
-                            display: 'flex',
-                            gap: '8px',
-                            marginBottom: '24px',
-                            overflowX: 'auto',
-                            padding: '4px',
-                            background: 'rgba(0,0,0,0.2)',
-                            borderRadius: '14px',
-                            width: 'fit-content',
+                            display: 'flex', gap: '8px', overflowX: 'auto', padding: '4px',
+                            background: 'rgba(0,0,0,0.2)', borderRadius: '14px', width: 'fit-content', maxWidth: '100%',
                             margin: '0 auto 24px auto'
                         }}>
-                            <TabButton id="profile" label="📊 Load Profile" />
-                            <TabButton id="programs" label="💰 DR Programs" />
-                            <TabButton id="business" label="📈 Business Case" />
-                            <TabButton id="operations" label="⚙️ Operations Impact" />
+                            {tabs.map(([id, label]) => (
+                                <TabButton key={id} active={activeTab === id} label={label} onClick={() => setActiveTab(id)} />
+                            ))}
                         </div>
 
                         {activeTab === 'profile' && (
                             <>
-                                <div style={{
-                                    background: 'rgba(255, 255, 255, 0.03)',
-                                    borderRadius: '24px',
-                                    border: '1px solid rgba(255, 255, 255, 0.08)',
-                                    padding: '28px',
-                                    marginBottom: '24px',
-                                    backdropFilter: 'blur(20px)'
-                                }}>
-                                    <div style={{
-                                        display: 'flex',
-                                        justifyContent: 'space-between',
-                                        alignItems: 'center',
-                                        marginBottom: '28px',
-                                        flexWrap: 'wrap',
-                                        gap: '16px'
-                                    }}>
+                                <div style={panel}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '28px', flexWrap: 'wrap', gap: '16px' }}>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                                            <span style={{ fontSize: '15px', color: '#8ba3bc' }}>Demand Response</span>
+                                            <span style={{ fontSize: '15px', color: C.sub }}>Demand Response</span>
                                             <button
                                                 onClick={() => setDrEnabled(!drEnabled)}
                                                 style={{
-                                                    width: '56px',
-                                                    height: '30px',
-                                                    borderRadius: '15px',
-                                                    border: 'none',
+                                                    width: '56px', height: '30px', borderRadius: '15px', border: 'none',
                                                     background: drEnabled ? 'linear-gradient(135deg, #4ade80, #22c55e)' : 'rgba(255,255,255,0.15)',
-                                                    cursor: 'pointer',
-                                                    position: 'relative',
-                                                    transition: 'all 0.3s ease',
+                                                    cursor: 'pointer', position: 'relative', transition: 'all 0.3s ease',
                                                     boxShadow: drEnabled ? '0 0 20px rgba(74, 222, 128, 0.3)' : 'none'
                                                 }}
                                             >
                                                 <div style={{
-                                                    width: '24px',
-                                                    height: '24px',
-                                                    borderRadius: '50%',
-                                                    background: '#fff',
-                                                    position: 'absolute',
-                                                    top: '3px',
-                                                    left: drEnabled ? '29px' : '3px',
-                                                    transition: 'left 0.3s ease',
-                                                    boxShadow: '0 2px 8px rgba(0,0,0,0.2)'
+                                                    width: '24px', height: '24px', borderRadius: '50%', background: '#fff',
+                                                    position: 'absolute', top: '3px', left: drEnabled ? '29px' : '3px',
+                                                    transition: 'left 0.3s ease', boxShadow: '0 2px 8px rgba(0,0,0,0.2)'
                                                 }} />
                                             </button>
                                         </div>
 
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                            <span style={{
-                                                fontSize: '14px',
-                                                color: '#8ba3bc',
-                                                padding: '6px 14px',
-                                                background: 'rgba(255,255,255,0.05)',
-                                                borderRadius: '8px'
-                                            }}>
-                                                {formatHour(currentHour)}
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                                            <span style={{ fontSize: '14px', color: C.sub, padding: '6px 14px', background: 'rgba(255,255,255,0.05)', borderRadius: '8px' }}>
+                                                {formatHour(currentHour)} · {num(shownAt(currentHour))} kW
                                             </span>
                                             <button
                                                 onClick={() => setIsAnimating(!isAnimating)}
                                                 style={{
-                                                    padding: '8px 16px',
-                                                    borderRadius: '8px',
-                                                    border: '1px solid rgba(255,255,255,0.15)',
+                                                    padding: '8px 16px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.15)',
                                                     background: isAnimating ? 'rgba(74, 222, 128, 0.15)' : 'rgba(255,255,255,0.05)',
-                                                    color: isAnimating ? '#4ade80' : '#8ba3bc',
-                                                    cursor: 'pointer',
-                                                    fontSize: '14px',
-                                                    fontWeight: '500',
-                                                    transition: 'all 0.2s ease'
+                                                    color: isAnimating ? C.green : C.sub, cursor: 'pointer', fontSize: '14px', fontWeight: '500'
                                                 }}
                                             >
                                                 {isAnimating ? '⏸ Pause' : '▶ Simulate Day'}
@@ -496,540 +919,808 @@
                                     </div>
 
                                     <div style={{ marginBottom: '16px' }}>
-                                        <div style={{ fontSize: '14px', color: '#8ba3bc', marginBottom: '8px' }}>
-                                            24-Hour Demand Profile — {currentSegment.name}
+                                        <div style={{ fontSize: '14px', color: C.sub, marginBottom: '8px' }}>
+                                            24-Hour Demand Profile on an event day: {seg.name} ({season})
                                         </div>
-                                        <div style={{ fontSize: '12px', color: '#6b8299', marginBottom: '16px' }}>
-                                            Peak demand: {currentSegment.peakDemand} kW | DR Event: 2 PM - {2 + eventDuration > 12 ? (2 + eventDuration - 12) : (2 + eventDuration)} PM ({eventDuration} hours)
+                                        <div style={{ fontSize: '12px', color: C.muted, marginBottom: '16px' }}>
+                                            Normal peak: {num(day.baseMax)} kW at {formatHour(day.baseMaxHour)} | DR event: {formatWindow(start, eventDuration)} ({eventDuration} {eventDuration === 1 ? 'hour' : 'hours'})
                                         </div>
-                                        <div style={{
-                                            display: 'flex',
-                                            alignItems: 'flex-end',
-                                            gap: '3px',
-                                            height: '180px',
-                                            padding: '0 8px'
-                                        }}>
+                                        <div style={{ position: 'relative', height: '160px', display: 'flex', alignItems: 'flex-end', gap: '3px', padding: '0 8px' }}>
+                                            <div style={{
+                                                position: 'absolute', left: 0, right: 0,
+                                                bottom: `${(day.baseMax / chartMax) * 160}px`,
+                                                borderTop: '1px dashed rgba(251, 191, 36, 0.6)', pointerEvents: 'none', zIndex: 1
+                                            }}>
+                                                <span style={{ position: 'absolute', right: 0, top: '-18px', fontSize: '10px', color: C.amber }}>
+                                                    Normal billing peak
+                                                </span>
+                                            </div>
                                             {hours.map((hour) => {
-                                                const baseline = getLoadProfile(hour);
-                                                const curtailed = getCurtailedProfile(hour);
-                                                const isPeakEvent = hour >= 14 && hour < 14 + eventDuration;
+                                                const shown = shownAt(hour);
                                                 const isCurrent = hour === currentHour;
-
+                                                const changed = drEnabled && day.kind[hour] !== 'normal';
                                                 return (
                                                     <div
                                                         key={hour}
-                                                        style={{
-                                                            flex: 1,
-                                                            display: 'flex',
-                                                            flexDirection: 'column',
-                                                            alignItems: 'center',
-                                                            gap: '8px'
-                                                        }}
+                                                        title={`${formatHour(hour)}: ${num(shown)} kW${changed ? ` (normally ${num(day.baseline[hour])} kW)` : ''}`}
+                                                        style={{ position: 'relative', flex: 1, height: '160px', display: 'flex', alignItems: 'flex-end' }}
                                                     >
-                                                        <div style={{ position: 'relative', width: '100%', height: '160px', display: 'flex', alignItems: 'flex-end' }}>
-                                                            {/* Baseline (shown as outline during DR) */}
-                                                            {drEnabled && isPeakEvent && (
-                                                                <div style={{
-                                                                    position: 'absolute',
-                                                                    bottom: 0,
-                                                                    left: 0,
-                                                                    right: 0,
-                                                                    height: `${baseline * 160}px`,
-                                                                    borderRadius: '3px 3px 0 0',
-                                                                    border: '2px dashed rgba(248, 113, 113, 0.5)',
-                                                                    background: 'transparent'
-                                                                }} />
-                                                            )}
-                                                            <div
-                                                                style={{
-                                                                    width: '100%',
-                                                                    height: `${(drEnabled ? curtailed : baseline) * 160}px`,
-                                                                    borderRadius: '3px 3px 0 0',
-                                                                    background: isCurrent
-                                                                        ? 'linear-gradient(180deg, #fbbf24, #f59e0b)'
-                                                                        : isPeakEvent
-                                                                            ? drEnabled
-                                                                                ? 'linear-gradient(180deg, #4ade80, #22c55e)'
-                                                                                : 'linear-gradient(180deg, #f87171, #ef4444)'
-                                                                            : 'linear-gradient(180deg, rgba(56, 189, 248, 0.6), rgba(56, 189, 248, 0.3))',
-                                                                    transition: 'all 0.5s ease',
-                                                                    boxShadow: isCurrent ? '0 0 20px rgba(251, 191, 36, 0.4)' : 'none'
-                                                                }}
-                                                            />
-                                                        </div>
-                                                        {hour % 4 === 0 && (
-                                                            <span style={{ fontSize: '10px', color: '#6b8299' }}>
-                                                                {formatHour(hour).replace(' AM', 'a').replace(' PM', 'p')}
-                                                            </span>
+                                                        {changed && (
+                                                            <div style={{
+                                                                position: 'absolute', bottom: 0, left: 0, right: 0,
+                                                                height: `${(day.baseline[hour] / chartMax) * 160}px`,
+                                                                borderRadius: '3px 3px 0 0', border: '2px dashed rgba(248, 113, 113, 0.5)'
+                                                            }} />
                                                         )}
+                                                        <div style={{
+                                                            width: '100%',
+                                                            height: `${(shown / chartMax) * 160}px`,
+                                                            borderRadius: '3px 3px 0 0',
+                                                            background: barColor(hour),
+                                                            transition: 'all 0.5s ease',
+                                                            boxShadow: isCurrent ? '0 0 20px rgba(251, 191, 36, 0.4)' : 'none'
+                                                        }} />
                                                     </div>
                                                 );
                                             })}
                                         </div>
+                                        <div style={{ display: 'flex', gap: '3px', padding: '0 8px', marginTop: '8px' }}>
+                                            {hours.map((hour) => (
+                                                <span key={hour} style={{ flex: 1, textAlign: 'center', fontSize: '10px', color: C.muted }}>
+                                                    {hour % 4 === 0 ? formatHour(hour).replace(' AM', 'a').replace(' PM', 'p') : ''}
+                                                </span>
+                                            ))}
+                                        </div>
                                     </div>
 
-                                    <div style={{
-                                        display: 'flex',
-                                        gap: '20px',
-                                        justifyContent: 'center',
-                                        flexWrap: 'wrap',
-                                        fontSize: '12px',
-                                        color: '#8ba3bc'
-                                    }}>
+                                    <div style={{ display: 'flex', gap: '20px', justifyContent: 'center', flexWrap: 'wrap', fontSize: '12px', color: C.sub, marginBottom: '20px' }}>
+                                        {[
+                                            ['linear-gradient(180deg, #f87171, #ef4444)', 'Peak (no DR)'],
+                                            ['linear-gradient(180deg, #4ade80, #22c55e)', 'Curtailed (DR active)'],
+                                            ['linear-gradient(180deg, #fdba74, #fb923c)', 'Pre-conditioning'],
+                                            ['linear-gradient(180deg, #d8b4fe, #c084fc)', 'Rebound']
+                                        ].map(([bg, label]) => (
+                                            <div key={label} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                <div style={{ width: '10px', height: '10px', borderRadius: '2px', background: bg }} />
+                                                <span>{label}</span>
+                                            </div>
+                                        ))}
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                            <div style={{ width: '10px', height: '10px', borderRadius: '2px', background: 'linear-gradient(180deg, #f87171, #ef4444)' }} />
-                                            <span>Peak (no DR)</span>
-                                        </div>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                            <div style={{ width: '10px', height: '10px', borderRadius: '2px', background: 'linear-gradient(180deg, #4ade80, #22c55e)' }} />
-                                            <span>Curtailed (DR active)</span>
-                                        </div>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                            <div style={{ width: '10px', height: '10px', borderRadius: '2px', border: '2px dashed rgba(248, 113, 113, 0.5)', background: 'transparent' }} />
+                                            <div style={{ width: '10px', height: '10px', borderRadius: '2px', border: '2px dashed rgba(248, 113, 113, 0.5)' }} />
                                             <span>Baseline demand</span>
                                         </div>
                                     </div>
+
+                                    {drEnabled && (
+                                        <>
+                                            <div style={{ ...autoGrid(150), padding: '20px', background: 'rgba(255,255,255,0.03)', borderRadius: '16px', marginBottom: '16px' }}>
+                                                <Stat value={`${num(day.perfKW)} kW`} label="Avg. reduction during event" color={C.green} />
+                                                <Stat value={`${num(day.eventKWh)} kWh`} label="Energy curtailed" color={C.blue} />
+                                                <Stat value={`${num(day.addedKWh)} kWh`} label="Energy shifted (pre + rebound)" color={C.purple} />
+                                                <Stat value={`${num(day.eventKWh - day.addedKWh)} kWh`} label="Net energy saved" color="#fff" />
+                                            </div>
+                                            {peakInsight && <div style={callout(peakInsight.color)}>{peakInsight.text}</div>}
+                                        </>
+                                    )}
                                 </div>
 
-                                {/* Facility Loads */}
-                                <div style={{
-                                    background: 'rgba(255, 255, 255, 0.03)',
-                                    borderRadius: '24px',
-                                    border: '1px solid rgba(255, 255, 255, 0.08)',
-                                    padding: '28px'
-                                }}>
-                                    <div style={{ marginBottom: '20px' }}>
-                                        <h3 style={{ fontSize: '18px', fontWeight: '600', margin: '0 0 8px 0', color: '#fff' }}>
-                                            Facility Load Breakdown
-                                        </h3>
-                                        <p style={{ fontSize: '14px', color: '#6b8299', margin: 0 }}>
-                                            Identify curtailable vs. critical loads for your facility type.
-                                        </p>
+                                {/* Facility loads: editable */}
+                                <div style={panel}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '16px', flexWrap: 'wrap', marginBottom: '20px' }}>
+                                        <div>
+                                            <h3 style={{ fontSize: '18px', fontWeight: '600', margin: '0 0 8px 0', color: '#fff' }}>
+                                                Model your facility
+                                            </h3>
+                                            <p style={{ fontSize: '14px', color: C.muted, margin: 0 }}>
+                                                Set each load's size and how much of it you can shed during an event. 0% means firm, critical load.
+                                            </p>
+                                        </div>
+                                        <button
+                                            onClick={resetFacility}
+                                            style={{ padding: '8px 14px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.05)', color: C.sub, cursor: 'pointer', fontSize: '13px', fontFamily: 'inherit' }}
+                                        >
+                                            ↺ Reset to typical
+                                        </button>
                                     </div>
 
                                     <div style={{ display: 'grid', gap: '12px', marginBottom: '24px' }}>
-                                        {Object.entries(currentSegment.loads).map(([key, load]) => (
-                                            <div
-                                                key={key}
-                                                style={{
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    justifyContent: 'space-between',
-                                                    padding: '16px 20px',
-                                                    borderRadius: '12px',
-                                                    border: `1px solid ${load.curtailable ? 'rgba(74, 222, 128, 0.3)' : 'rgba(248, 113, 113, 0.3)'}`,
-                                                    background: load.curtailable ? 'rgba(74, 222, 128, 0.05)' : 'rgba(248, 113, 113, 0.05)'
-                                                }}
-                                            >
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                                                    <span style={{ fontSize: '24px' }}>{load.icon}</span>
-                                                    <div>
-                                                        <div style={{ fontSize: '14px', fontWeight: '600', color: '#fff' }}>{load.name}</div>
-                                                        <div style={{ fontSize: '12px', color: '#6b8299' }}>{load.kw} kW</div>
+                                        {loadList.map(([key, load]) => {
+                                            const sheddable = load.kw * load.pct / 100;
+                                            const firm = load.pct === 0;
+                                            return (
+                                                <div
+                                                    key={key}
+                                                    style={{
+                                                        display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '16px 24px',
+                                                        padding: '16px 20px', borderRadius: '12px',
+                                                        border: `1px solid ${firm ? 'rgba(248, 113, 113, 0.3)' : 'rgba(74, 222, 128, 0.3)'}`,
+                                                        background: firm ? 'rgba(248, 113, 113, 0.05)' : 'rgba(74, 222, 128, 0.05)'
+                                                    }}
+                                                >
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flex: '1 1 200px' }}>
+                                                        <span style={{ fontSize: '24px' }}>{load.icon}</span>
+                                                        <div>
+                                                            <div style={{ fontSize: '14px', fontWeight: '600', color: '#fff' }}>{load.name}</div>
+                                                            <div style={{ fontSize: '12px', color: C.muted }}>
+                                                                {load.shift ? '↺ Energy shifts before/after the event' : 'Energy is avoided, not shifted'}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div style={{ flex: '0 1 110px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                        <input type="number" min="0" aria-label={`${load.name} kW`} value={load.kw} onChange={(e) => setLoad(key, 'kw', Math.max(0, Number(e.target.value) || 0))} />
+                                                        <span style={{ fontSize: '12px', color: C.muted }}>kW</span>
+                                                    </div>
+                                                    <div style={{ flex: '1 1 200px' }}>
+                                                        <Slider
+                                                            label="Can shed"
+                                                            display={`${load.pct}%`}
+                                                            value={load.pct} min={0} max={100} step={5}
+                                                            onChange={(v) => setLoad(key, 'pct', v)}
+                                                        />
+                                                    </div>
+                                                    <div style={{
+                                                        padding: '4px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: '500', whiteSpace: 'nowrap',
+                                                        background: firm ? 'rgba(248, 113, 113, 0.2)' : 'rgba(74, 222, 128, 0.2)',
+                                                        color: firm ? C.red : C.green
+                                                    }}>
+                                                        {firm ? '⚠ Firm' : `✓ ${num(sheddable)} kW sheddable`}
                                                     </div>
                                                 </div>
-                                                <div style={{
-                                                    padding: '4px 12px',
-                                                    borderRadius: '8px',
-                                                    fontSize: '12px',
-                                                    fontWeight: '500',
-                                                    background: load.curtailable ? 'rgba(74, 222, 128, 0.2)' : 'rgba(248, 113, 113, 0.2)',
-                                                    color: load.curtailable ? '#4ade80' : '#f87171'
-                                                }}>
-                                                    {load.curtailable ? '✓ Curtailable' : '⚠ Critical'}
-                                                </div>
-                                            </div>
-                                        ))}
+                                            );
+                                        })}
                                     </div>
 
-                                    <div style={{
-                                        display: 'grid',
-                                        gridTemplateColumns: 'repeat(3, 1fr)',
-                                        gap: '16px',
-                                        padding: '20px',
-                                        background: 'rgba(255,255,255,0.03)',
-                                        borderRadius: '16px'
-                                    }}>
-                                        <div style={{ textAlign: 'center' }}>
-                                            <div style={{ fontSize: '28px', fontWeight: '700', color: '#4ade80' }}>{curtailableKW} kW</div>
-                                            <div style={{ fontSize: '12px', color: '#6b8299' }}>Curtailable Load</div>
-                                        </div>
-                                        <div style={{ textAlign: 'center' }}>
-                                            <div style={{ fontSize: '28px', fontWeight: '700', color: '#f87171' }}>{criticalKW} kW</div>
-                                            <div style={{ fontSize: '12px', color: '#6b8299' }}>Critical Load</div>
-                                        </div>
-                                        <div style={{ textAlign: 'center' }}>
-                                            <div style={{ fontSize: '28px', fontWeight: '700', color: '#38bdf8' }}>{Math.round(curtailableKW / currentSegment.peakDemand * 100)}%</div>
-                                            <div style={{ fontSize: '12px', color: '#6b8299' }}>DR Potential</div>
-                                        </div>
+                                    <div style={{ ...autoGrid(140), padding: '20px', background: 'rgba(255,255,255,0.03)', borderRadius: '16px' }}>
+                                        <Stat value={`${num(curtailableKW)} kW`} label="Curtailable Load" color={C.green} />
+                                        <Stat value={`${num(firmKW)} kW`} label="Firm Load" color={C.red} />
+                                        <Stat value={`${peakDemand ? Math.round(curtailableKW / peakDemand * 100) : 0}%`} label="DR Potential" color={C.blue} />
+                                        <Stat value={`${Math.round(shiftShare * 100)}%`} label="Shifts vs. avoided" color={C.purple} />
                                     </div>
                                 </div>
                             </>
                         )}
 
                         {activeTab === 'programs' && (
-                            <div style={{
-                                background: 'rgba(255, 255, 255, 0.03)',
-                                borderRadius: '24px',
-                                border: '1px solid rgba(255, 255, 255, 0.08)',
-                                padding: '28px'
-                            }}>
-                                <div style={{ marginBottom: '24px' }}>
-                                    <h2 style={{ fontSize: '20px', fontWeight: '600', margin: '0 0 8px 0', color: '#fff' }}>
-                                        💰 Demand Response Program Options
-                                    </h2>
-                                    <p style={{ fontSize: '14px', color: '#6b8299', margin: 0 }}>
-                                        Compare programs to find the best fit for your operations and risk tolerance.
-                                    </p>
-                                </div>
+                            <div style={panel}>
+                                <SectionHeader
+                                    title="💰 PSE Flex Programs for Business"
+                                    desc={`Compare PSE's business demand response programs. At ${num(peakDemand)} kW peak, this facility would be on Schedule ${schedule}${schedule === '26' ? ' (or 31 at primary voltage)' : ''}. Estimates use your facility, event window, and performance, assuming both winter and summer seasons.`}
+                                />
 
                                 <div style={{ display: 'grid', gap: '16px', marginBottom: '32px' }}>
-                                    {Object.entries(programs).map(([key, program]) => (
-                                        <div
-                                            key={key}
-                                            onClick={() => setSelectedProgram(key)}
-                                            style={{
-                                                padding: '24px',
-                                                borderRadius: '16px',
-                                                border: `2px solid ${selectedProgram === key ? '#4ade80' : 'rgba(255,255,255,0.08)'}`,
-                                                background: selectedProgram === key ? 'rgba(74, 222, 128, 0.08)' : 'rgba(255,255,255,0.02)',
-                                                cursor: 'pointer',
-                                                transition: 'all 0.2s ease'
-                                            }}
-                                        >
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
-                                                <div>
-                                                    <div style={{ fontSize: '18px', fontWeight: '600', color: '#fff', marginBottom: '4px' }}>{program.name}</div>
-                                                    <div style={{ fontSize: '13px', color: '#8ba3bc' }}>{program.desc}</div>
-                                                </div>
-                                                {selectedProgram === key && (
-                                                    <span style={{ fontSize: '12px', color: '#4ade80', fontWeight: '500', padding: '4px 10px', background: 'rgba(74, 222, 128, 0.2)', borderRadius: '8px' }}>✓ Selected</span>
-                                                )}
-                                            </div>
-                                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '16px' }}>
-                                                <div>
-                                                    <div style={{ fontSize: '11px', color: '#6b8299', marginBottom: '2px' }}>Type</div>
-                                                    <div style={{ fontSize: '14px', fontWeight: '500', color: '#fff' }}>{program.type}</div>
-                                                </div>
-                                                <div>
-                                                    <div style={{ fontSize: '11px', color: '#6b8299', marginBottom: '2px' }}>Payment</div>
-                                                    <div style={{ fontSize: '14px', fontWeight: '500', color: '#4ade80' }}>
-                                                        {key === 'capacity' ? `$${program.rate}/kW/mo` : `$${program.rate}/kWh`}
+                                    {Object.entries(PROGRAMS).map(([key, p]) => {
+                                        const c = computeCase(key, performance, peakAligned, EVENTS.expected);
+                                        const selected = programKey === key;
+                                        const eligible = isEligible(key);
+                                        return (
+                                            <div
+                                                key={key}
+                                                onClick={() => setProgramKey(key)}
+                                                style={{
+                                                    padding: '24px', borderRadius: '16px',
+                                                    border: `2px solid ${selected ? C.green : 'rgba(255,255,255,0.08)'}`,
+                                                    background: selected ? 'rgba(74, 222, 128, 0.08)' : 'rgba(255,255,255,0.02)',
+                                                    cursor: 'pointer', transition: 'all 0.2s ease'
+                                                }}
+                                            >
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '16px' }}>
+                                                    <div>
+                                                        <div style={{ fontSize: '18px', fontWeight: '600', color: '#fff', marginBottom: '4px' }}>{p.name}</div>
+                                                        <div style={{ fontSize: '13px', color: C.sub }}>{p.desc}</div>
+                                                    </div>
+                                                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                                                        {!eligible && (
+                                                            <span style={{ fontSize: '12px', color: C.amber, fontWeight: '500', padding: '4px 10px', background: 'rgba(251, 191, 36, 0.15)', borderRadius: '8px', whiteSpace: 'nowrap' }}>Not open to Schedule {schedule}</span>
+                                                        )}
+                                                        {selected && (
+                                                            <span style={{ fontSize: '12px', color: C.green, fontWeight: '500', padding: '4px 10px', background: 'rgba(74, 222, 128, 0.2)', borderRadius: '8px', whiteSpace: 'nowrap' }}>✓ Selected</span>
+                                                        )}
                                                     </div>
                                                 </div>
-                                                <div>
-                                                    <div style={{ fontSize: '11px', color: '#6b8299', marginBottom: '2px' }}>Notice</div>
-                                                    <div style={{ fontSize: '14px', fontWeight: '500', color: '#fff' }}>{program.response}</div>
+                                                <div style={{ ...autoGrid(120), marginBottom: '16px' }}>
+                                                    {[
+                                                        ['Type', p.type, '#fff'],
+                                                        ['Payment', p.rateLabel, C.green],
+                                                        ['Notice', key === 'flexci' ? <>{p.notice}<AssumedTag note="PSE doesn't publish Flex C&I notice times or event caps." /></> : p.notice, '#fff'],
+                                                        ['Rate schedules', p.schedules.join(', '), eligible ? '#fff' : C.amber],
+                                                        ['Penalties', 'None published', C.green]
+                                                    ].map(([label, value, color]) => (
+                                                        <div key={label}>
+                                                            <div style={{ fontSize: '11px', color: C.muted, marginBottom: '2px' }}>{label}</div>
+                                                            <div style={{ fontSize: '14px', fontWeight: '500', color }}>{value}</div>
+                                                        </div>
+                                                    ))}
                                                 </div>
-                                                <div>
-                                                    <div style={{ fontSize: '11px', color: '#6b8299', marginBottom: '2px' }}>Events/Year</div>
-                                                    <div style={{ fontSize: '14px', fontWeight: '500', color: '#fff' }}>{program.events}</div>
-                                                </div>
-                                                <div>
-                                                    <div style={{ fontSize: '11px', color: '#6b8299', marginBottom: '2px' }}>Penalties</div>
-                                                    <div style={{ fontSize: '14px', fontWeight: '500', color: program.penalty ? '#fbbf24' : '#4ade80' }}>
-                                                        {program.penalty ? 'Yes' : 'No'}
-                                                    </div>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', paddingTop: '14px', borderTop: '1px solid rgba(255,255,255,0.08)', fontSize: '13px' }}>
+                                                    <span style={{ color: C.muted, flex: '1 1 300px' }}>{p.shortfallTerms}</span>
+                                                    <span style={{ color: '#fff' }}>
+                                                        Est. incentive: <strong style={{ color: C.green }}>{money(c.incentive)}/yr</strong>
+                                                    </span>
                                                 </div>
                                             </div>
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
 
-                                <div style={{
-                                    padding: '20px',
-                                    background: 'rgba(56, 189, 248, 0.1)',
-                                    borderRadius: '16px',
-                                    border: '1px solid rgba(56, 189, 248, 0.2)'
-                                }}>
-                                    <h4 style={{ fontSize: '14px', fontWeight: '600', color: '#38bdf8', marginBottom: '12px' }}>
-                                        Program Comparison
-                                    </h4>
-                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', fontSize: '13px' }}>
+                                <div style={{ padding: '20px', background: 'rgba(56, 189, 248, 0.1)', borderRadius: '16px', border: '1px solid rgba(56, 189, 248, 0.2)' }}>
+                                    <h4 style={{ fontSize: '14px', fontWeight: '600', color: C.blue, marginBottom: '12px' }}>Program Comparison</h4>
+                                    <div style={{ ...autoGrid(200), gap: '12px', fontSize: '13px' }}>
                                         <div>
-                                            <div style={{ color: '#6b8299', marginBottom: '4px' }}>Best for</div>
+                                            <div style={{ color: C.muted, marginBottom: '4px' }}>Best for</div>
                                             <div style={{ color: '#fff' }}>
-                                                {selectedProgram === 'capacity' ? 'Predictable, flexible operations' :
-                                                 selectedProgram === 'energy' ? 'Variable schedules, low risk tolerance' :
-                                                 'Highest revenue, emergency response capability'}
+                                                {programKey === 'flexci' ? 'Larger sites that can commit a predictable kW reduction' :
+                                                 programKey === 'flexbusiness' ? 'Small businesses that want to choose event by event' :
+                                                 'Small businesses with smart thermostats and no staff time to spare'}
                                             </div>
                                         </div>
                                         <div>
-                                            <div style={{ color: '#6b8299', marginBottom: '4px' }}>Auto-DR Compatible</div>
-                                            <div style={{ color: '#4ade80' }}>Yes — recommended for faster response</div>
+                                            <div style={{ color: C.muted, marginBottom: '4px' }}>Seasons & limits</div>
+                                            <div style={{ color: '#fff' }}>Winter Nov 1 – Mar 31, summer May 1 – Sep 30. Flex Business and Flex Smart allow up to 15 events per season, 3 per week.</div>
                                         </div>
                                         <div>
-                                            <div style={{ color: '#6b8299', marginBottom: '4px' }}>Stacking</div>
-                                            <div style={{ color: '#fff' }}>Can combine with TOU rates for additional savings</div>
+                                            <div style={{ color: C.muted, marginBottom: '4px' }}>Stacking</div>
+                                            <div style={{ color: '#fff' }}>Flex C&I stacks with other PSE business incentives, such as lighting retrofits.</div>
                                         </div>
                                     </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {activeTab === 'settlement' && (
+                            <div style={panel}>
+                                <SectionHeader
+                                    title="🧾 How you get paid: baseline & settlement"
+                                    desc="Your reduction is measured against a baseline: an estimate of what you would have used without the event. PSE's terms say savings use an industry-standard calculation without naming the method. Here is how one event settles under a common one: a 10-in-10 baseline with a day-of adjustment."
+                                />
+
+                                <div style={subPanel}>
+                                    <h4 style={{ fontSize: '15px', fontWeight: '600', color: '#fff', marginBottom: '6px' }}>Step 1: Average the last 10 non-event weekdays</h4>
+                                    <p style={{ fontSize: '13px', color: C.muted, marginBottom: '16px' }}>
+                                        Average load from {formatWindow(start, eventDuration)} on each prior day. Event days are usually the most extreme days, so this average runs low.
+                                    </p>
+                                    <div style={{ display: 'flex', alignItems: 'flex-end', gap: '6px', height: '110px' }}>
+                                        {[...settlement.priorDays, settlement.eventDayLoad].map((kw, i) => {
+                                            const isEventDay = i === settlement.priorDays.length;
+                                            const maxKw = Math.max(...settlement.priorDays, settlement.eventDayLoad);
+                                            return (
+                                                <div key={i} title={`${isEventDay ? 'Event day (expected)' : `Prior day ${i + 1}`}: ${num(kw)} kW`} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', height: '100%', justifyContent: 'flex-end' }}>
+                                                    <div style={{
+                                                        width: '100%', height: `${(kw / maxKw) * 90}px`, borderRadius: '3px 3px 0 0',
+                                                        background: isEventDay ? 'linear-gradient(180deg, #fbbf24, #f59e0b)' : 'rgba(56, 189, 248, 0.45)'
+                                                    }} />
+                                                    <span style={{ fontSize: '10px', color: isEventDay ? C.amber : C.muted }}>{isEventDay ? 'Event' : `D${i + 1}`}</span>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+
+                                <div style={subPanel}>
+                                    <h4 style={{ fontSize: '15px', fontWeight: '600', color: '#fff', marginBottom: '6px' }}>Step 2: Adjust for event-day conditions</h4>
+                                    <p style={{ fontSize: '13px', color: C.muted, marginBottom: '16px', lineHeight: 1.5 }}>
+                                        Compare event-day load in the adjustment window ({formatHour(settlement.adjHours[0])} – {formatHour(settlement.adjHours[1] + 1)}) with the 10-day average for the same hours.
+                                        The ratio, capped at ±20%, scales the baseline: <strong style={{ color: '#fff' }}>×{settlement.factor.toFixed(2)}</strong>.
+                                    </p>
+                                    <div style={callout(C.amber)}>
+                                        The window ends before pre-conditioning starts. If pre-heating or pre-cooling fell inside it, the higher load would inflate the baseline and overpay the event. Programs end the window early to prevent this.
+                                    </div>
+                                </div>
+
+                                <div style={subPanel}>
+                                    <h4 style={{ fontSize: '15px', fontWeight: '600', color: '#fff', marginBottom: '16px' }}>Step 3: Measure performance hour by hour</h4>
+                                    <div style={{ overflowX: 'auto' }}>
+                                        <div style={{ minWidth: '480px' }}>
+                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr', gap: '8px', fontSize: '12px', color: C.muted, paddingBottom: '8px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                                                <span>Hour</span><span>10-day avg</span><span>Adjusted baseline</span><span>Measured</span><span>Reduction</span>
+                                            </div>
+                                            {settlement.rows.map((r) => (
+                                                <div key={r.h} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr', gap: '8px', fontSize: '13px', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                                                    <span style={{ color: '#fff' }}>{formatHour(r.h)}</span>
+                                                    <span style={{ color: C.sub }}>{num(r.avg)} kW</span>
+                                                    <span style={{ color: C.sub }}>{num(r.adj)} kW</span>
+                                                    <span style={{ color: C.sub }}>{num(r.measured)} kW</span>
+                                                    <span style={{ color: C.green, fontWeight: '600' }}>{num(r.red)} kW</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div style={{ ...autoGrid(200), marginBottom: '24px' }}>
+                                    <MetricCard label="AVERAGE PERFORMANCE" value={`${num(settlement.perf)} kW`} sub={`Settled over ${eventDuration} event ${eventDuration === 1 ? 'hour' : 'hours'}`} color={C.green} />
+                                    {programKey === 'flexci' ? (
+                                        <MetricCard
+                                            label="VS. COMMITMENT"
+                                            value={`${committedKW > 0 ? Math.round((settlement.perf / committedKW) * 100) : 0}%`}
+                                            sub={`Committed ${num(committedKW)} kW`}
+                                            color={settlement.perf >= committedKW ? C.blue : C.amber}
+                                        />
+                                    ) : (
+                                        <MetricCard label="COMMITMENT" value="None" sub="You can decline or override any event" color={C.blue} />
+                                    )}
+                                    {program.basis === 'kwh' ? (
+                                        <MetricCard
+                                            label="THIS EVENT'S PAYMENT"
+                                            value={money(settlement.kWh * program.rate)}
+                                            sub={`${num(settlement.kWh)} kWh × ${program.rateLabel}`}
+                                            color={C.amber}
+                                        />
+                                    ) : (
+                                        <MetricCard
+                                            label="SEASON PAYMENT AT THIS PACE"
+                                            value={money(programKey === 'flexci'
+                                                ? Math.min(settlement.perf, committedKW) * flexCIRate
+                                                : settlement.perf * hvacShare * program.rate)}
+                                            sub={programKey === 'flexci'
+                                                ? `If every event this season performs like this one · $${flexCIRate}/kW`
+                                                : `HVAC share of the reduction × $${program.rate}/kW`}
+                                            color={C.amber}
+                                        />
+                                    )}
+                                </div>
+
+                                <div style={callout(C.blue)}>
+                                    💡 Without the day-of adjustment you'd be credited <strong style={{ color: '#fff' }}>{num(settlement.perfUnadj)} kW</strong> instead of <strong style={{ color: '#fff' }}>{num(settlement.perf)} kW</strong>
+                                    {settlement.perf > 0 && <> ({Math.round((1 - settlement.perfUnadj / settlement.perf) * 100)}% less)</>}. That's why the adjustment matters for customers on extreme-weather event days.
                                 </div>
                             </div>
                         )}
 
                         {activeTab === 'business' && (
-                            <div style={{
-                                background: 'rgba(255, 255, 255, 0.03)',
-                                borderRadius: '24px',
-                                border: '1px solid rgba(255, 255, 255, 0.08)',
-                                padding: '28px'
-                            }}>
-                                <div style={{ marginBottom: '24px' }}>
-                                    <h2 style={{ fontSize: '20px', fontWeight: '600', margin: '0 0 8px 0', color: '#fff' }}>
-                                        📈 Business Case Builder
-                                    </h2>
-                                    <p style={{ fontSize: '14px', color: '#6b8299', margin: 0 }}>
-                                        Calculate ROI for {currentSegment.name} with {currentProgram.name}.
-                                    </p>
+                            <div style={panel}>
+                                <SectionHeader
+                                    title="📈 Business Case Builder"
+                                    desc={`Risk-adjusted ROI for ${seg.name} in ${program.name}. Program rates come from PSE's published terms. Values tagged "assumed" are modeled; see "What's sourced vs. assumed" below.`}
+                                />
+
+                                {!isEligible(programKey) && (
+                                    <div style={{ ...callout(C.amber), marginBottom: '24px' }}>
+                                        ⚠️ {program.name} is open to Schedules {program.schedules.join(' and ')}. At {num(peakDemand)} kW this facility would be on Schedule {schedule}, so it would enroll in Flex C&I instead.
+                                    </div>
+                                )}
+
+                                <div style={{ ...subPanel }}>
+                                    <div style={{ ...autoGrid(240), gap: '24px' }}>
+                                        {programKey === 'flexci' && (
+                                            <Slider
+                                                label="Flex C&I rate"
+                                                display={`$${flexCIRate}/kW per season`}
+                                                value={flexCIRate} min={20} max={65} step={5}
+                                                onChange={setFlexCIRate}
+                                                hint="PSE advertises up to $65/kW per season (up to $130/kW a year). Your agreement sets the actual rate."
+                                            />
+                                        )}
+                                        {programKey === 'flexci' && (
+                                            <Slider
+                                                label="Committed kW"
+                                                display={`${Math.round(commitPct * 100)}% · ${num(committedKW)} kW`}
+                                                value={commitPct} min={0.5} max={1} step={0.05}
+                                                onChange={setCommitPct}
+                                                hint={`Share of the ${num(eventPotentialKW)} kW your loads can shed in this window. Committing more raises the ceiling on earnings; delivering less lowers your payment.`}
+                                            />
+                                        )}
+                                        <Slider
+                                            label="Months an event hits your billing peak"
+                                            display={`${peakAligned} of 12`}
+                                            value={peakAligned} min={0} max={12}
+                                            onChange={setPeakAligned}
+                                            hint="Demand charges are set by each month's single highest peak. PSE's system peaks fall in Dec–Feb, so 3 months is a reasonable default."
+                                        />
+                                        <div>
+                                            <div style={{ fontSize: '13px', color: C.sub, marginBottom: '8px' }}>How you respond</div>
+                                            <Segmented
+                                                value={enrollPath}
+                                                onChange={setEnrollPath}
+                                                options={[{ value: 'manual', label: 'Manual plan' }, { value: 'automated', label: 'Automated controls' }]}
+                                            />
+                                            <div style={{ fontSize: '11px', color: C.muted, marginTop: '6px', lineHeight: 1.4 }}>
+                                                {enrollPath === 'manual'
+                                                    ? 'Staff follow the energy-reduction plan when notified. No equipment cost, but performance depends on people.'
+                                                    : 'Controls shed load automatically when the event signal arrives. Costs money up front, and usually performs more reliably.'}
+                                            </div>
+                                        </div>
+                                        {enrollPath === 'automated' && (
+                                            <NumberField
+                                                label="Controls cost ($/kW curtailable)"
+                                                value={controlsCostPerKW}
+                                                onChange={(v) => setCostOverrides((o) => ({ ...o, [segKey]: v }))}
+                                                prefix="$"
+                                                hint="Illustrative. BMS integration, Auto-DR gateway, commissioning."
+                                            />
+                                        )}
+                                        {enrollPath === 'automated' && (
+                                            <NumberField
+                                                label="Controls rebate ($/kW)"
+                                                value={rebatePerKW}
+                                                onChange={setRebatePerKW}
+                                                prefix="$"
+                                                hint="Any utility or state incentive toward controls."
+                                            />
+                                        )}
+                                        <Slider
+                                            label="Discount rate"
+                                            display={`${Math.round(discountRate * 100)}%`}
+                                            value={discountRate} min={0.03} max={0.15} step={0.01}
+                                            onChange={setDiscountRate}
+                                        />
+                                    </div>
                                 </div>
 
-                                <div style={{ marginBottom: '24px' }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                                        <span style={{ fontSize: '14px', color: '#8ba3bc' }}>Event Duration</span>
-                                        <span style={{ fontSize: '14px', color: '#fff', fontWeight: '500' }}>{eventDuration} hours</span>
-                                    </div>
-                                    <input
-                                        type="range"
-                                        min="1"
-                                        max="6"
-                                        value={eventDuration}
-                                        onChange={(e) => setEventDuration(Number(e.target.value))}
-                                        style={{
-                                            width: '100%',
-                                            height: '8px',
-                                            borderRadius: '4px',
-                                            background: 'linear-gradient(90deg, #4ade80 0%, #38bdf8 100%)',
-                                            appearance: 'none',
-                                            cursor: 'pointer'
-                                        }}
+                                <div style={{ ...autoGrid(200), marginBottom: '24px' }}>
+                                    <MetricCard
+                                        label={programKey === 'flexci'
+                                            ? <>INCENTIVE<AssumedTag note="PSE doesn't publish the Flex C&I pay formula; modeled as the lower of committed kW and performance × rate." /></>
+                                            : 'INCENTIVE'}
+                                        value={money(expected.incentive)}
+                                        sub={program.basis === 'kwh' ? `per year · ${expected.events} events × $1/kWh` : `per year · winter + summer seasons`}
+                                        color={C.green}
                                     />
+                                    <MetricCard label={<>DEMAND CHARGE SAVINGS<AssumedTag note="Schedule 26 rates via OpenEI; Schedules 24 and 25 differ." /></>} value={money(expected.demandSavings)} sub={`${num(expected.peakReductionKW)} kW × $${demandRate}/kW (${season} rate) × ${peakAligned} mo`} color={expected.demandSavings < 0 ? C.red : C.blue} />
+                                    <MetricCard label="ENERGY SAVINGS" value={money(expected.energySavings)} sub={`net kWh avoided × ~$${TARIFF.energy.toFixed(2)}/kWh`} color={C.purple} />
+                                    <MetricCard label="UPFRONT COST" value={money(expected.upfront)} sub={enrollPath === 'manual' ? 'PSE enrollment support is free' : `one-time · $${controlsCostPerKW}/kW${rebatePerKW ? ` less $${rebatePerKW}/kW rebate` : ''}`} color={C.amber} />
                                 </div>
 
-                                <div style={{
-                                    display: 'grid',
-                                    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-                                    gap: '16px',
-                                    marginBottom: '24px'
-                                }}>
-                                    <div style={{
-                                        padding: '20px',
-                                        borderRadius: '16px',
-                                        background: 'linear-gradient(135deg, rgba(74, 222, 128, 0.1) 0%, rgba(34, 197, 94, 0.05) 100%)',
-                                        border: '1px solid rgba(74, 222, 128, 0.2)'
-                                    }}>
-                                        <div style={{ fontSize: '12px', color: '#4ade80', fontWeight: '600', marginBottom: '8px' }}>INCENTIVE REVENUE</div>
-                                        <div style={{ fontSize: '32px', fontWeight: '700', color: '#fff' }}>${businessCase.incentiveRevenue.toLocaleString()}</div>
-                                        <div style={{ fontSize: '12px', color: '#6b8299' }}>per year • {businessCase.annualEvents} events</div>
-                                    </div>
-
-                                    <div style={{
-                                        padding: '20px',
-                                        borderRadius: '16px',
-                                        background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.1) 0%, rgba(14, 165, 233, 0.05) 100%)',
-                                        border: '1px solid rgba(56, 189, 248, 0.2)'
-                                    }}>
-                                        <div style={{ fontSize: '12px', color: '#38bdf8', fontWeight: '600', marginBottom: '8px' }}>DEMAND CHARGE SAVINGS</div>
-                                        <div style={{ fontSize: '32px', fontWeight: '700', color: '#fff' }}>${businessCase.demandChargeSavings.toLocaleString()}</div>
-                                        <div style={{ fontSize: '12px', color: '#6b8299' }}>per year • ${currentSegment.demandCharge}/kW</div>
-                                    </div>
-
-                                    <div style={{
-                                        padding: '20px',
-                                        borderRadius: '16px',
-                                        background: 'rgba(255,255,255,0.03)',
-                                        border: '1px solid rgba(255,255,255,0.08)'
-                                    }}>
-                                        <div style={{ fontSize: '12px', color: '#fbbf24', fontWeight: '600', marginBottom: '8px' }}>IMPLEMENTATION COST</div>
-                                        <div style={{ fontSize: '32px', fontWeight: '700', color: '#fff' }}>${businessCase.implementationCost.toLocaleString()}</div>
-                                        <div style={{ fontSize: '12px', color: '#6b8299' }}>one-time • ~$15/kW</div>
-                                    </div>
+                                <div style={subPanel}>
+                                    <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#fff', marginBottom: '8px' }}>Annual Summary (expected case)</h4>
+                                    <SummaryRow label={`${program.name} incentive`} value={`+${money(expected.incentive)}`} color={C.green} />
+                                    {programKey === 'flexci' && expected.shortfallLoss > 0 && (
+                                        <SummaryRow
+                                            label={`Not earned: ${num(expected.shortfallKW)} kW below commitment`}
+                                            value={`(${money(expected.shortfallLoss)})`}
+                                            color={C.muted}
+                                        />
+                                    )}
+                                    <SummaryRow label="Demand charge savings" value={`${expected.demandSavings >= 0 ? '+' : ''}${money(expected.demandSavings)}`} color={expected.demandSavings >= 0 ? C.blue : C.red} />
+                                    <SummaryRow label="Energy savings" value={`+${money(expected.energySavings)}`} color={C.purple} />
+                                    {enrollPath === 'automated' && (
+                                        <SummaryRow label="Controls maintenance (10%/yr)" value={`-${money(expected.maintenance)}`} color={C.amber} />
+                                    )}
+                                    <SummaryRow strong label="Annual net benefit" value={money(expected.annualNet)} color={expected.annualNet >= 0 ? C.green : C.red} />
                                 </div>
 
-                                <div style={{
-                                    padding: '24px',
-                                    borderRadius: '16px',
-                                    background: 'rgba(0,0,0,0.2)',
-                                    marginBottom: '24px'
-                                }}>
-                                    <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#fff', marginBottom: '16px' }}>Annual Summary</h4>
-                                    <div style={{ display: 'grid', gap: '12px' }}>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-                                            <span style={{ color: '#8ba3bc' }}>Incentive Revenue</span>
-                                            <span style={{ color: '#4ade80', fontWeight: '600' }}>+${businessCase.incentiveRevenue.toLocaleString()}</span>
-                                        </div>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-                                            <span style={{ color: '#8ba3bc' }}>Demand Charge Savings</span>
-                                            <span style={{ color: '#38bdf8', fontWeight: '600' }}>+${businessCase.demandChargeSavings.toLocaleString()}</span>
-                                        </div>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-                                            <span style={{ color: '#8ba3bc' }}>Implementation (Year 1)</span>
-                                            <span style={{ color: '#f87171', fontWeight: '600' }}>-${businessCase.implementationCost.toLocaleString()}</span>
-                                        </div>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-                                            <span style={{ color: '#8ba3bc' }}>Annual Maintenance</span>
-                                            <span style={{ color: '#fbbf24', fontWeight: '600' }}>-${businessCase.annualMaintenance.toLocaleString()}</span>
-                                        </div>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '16px 0' }}>
-                                            <span style={{ color: '#fff', fontWeight: '600', fontSize: '16px' }}>Net Benefit (Year 1)</span>
-                                            <span style={{ color: businessCase.totalFirstYear >= 0 ? '#4ade80' : '#f87171', fontWeight: '700', fontSize: '20px' }}>
-                                                ${businessCase.totalFirstYear.toLocaleString()}
-                                            </span>
+                                <div style={subPanel}>
+                                    <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#fff', marginBottom: '6px' }}>Scenario range</h4>
+                                    <p style={{ fontSize: '13px', color: C.muted, marginBottom: '16px' }}>
+                                        Downside: 15 points lower performance, fewer events, 2 fewer peak-aligned months. Upside: the reverse.
+                                    </p>
+                                    <div style={{ overflowX: 'auto' }}>
+                                        <div style={{ minWidth: '460px' }}>
+                                            <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr 1fr', gap: '8px', fontSize: '12px', paddingBottom: '8px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                                                <span />
+                                                {scenarios.map((s) => <span key={s.key} style={{ color: s.color, fontWeight: '600' }}>{s.label}</span>)}
+                                            </div>
+                                            {[
+                                                ['Delivered performance', (c) => `${Math.round(c.pf * 100)}%`],
+                                                [<>Events per year<AssumedTag note="PSE called 7 events in its first winter; actual counts depend on weather." /></>, (c) => c.events],
+                                                ['Peak-aligned months', (c) => c.aligned],
+                                                ['Annual net benefit', (c) => money(c.annualNet)],
+                                                ['10-year NPV', (c) => money(c.npv)],
+                                                ['Payback', (c) => formatPayback(c.paybackMonths)]
+                                            ].map(([label, fn], i) => (
+                                                <div key={i} style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr 1fr', gap: '8px', fontSize: '13px', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                                                    <span style={{ color: C.sub }}>{label}</span>
+                                                    {scenarios.map((s) => <span key={s.key} style={{ color: '#fff' }}>{fn(s.c)}</span>)}
+                                                </div>
+                                            ))}
                                         </div>
                                     </div>
                                 </div>
 
-                                <div style={{
-                                    display: 'grid',
-                                    gridTemplateColumns: 'repeat(3, 1fr)',
-                                    gap: '16px',
-                                    padding: '20px',
-                                    background: 'rgba(74, 222, 128, 0.1)',
-                                    borderRadius: '16px',
-                                    border: '1px solid rgba(74, 222, 128, 0.2)'
-                                }}>
-                                    <div style={{ textAlign: 'center' }}>
-                                        <div style={{ fontSize: '28px', fontWeight: '700', color: '#4ade80' }}>{businessCase.paybackMonths}</div>
-                                        <div style={{ fontSize: '12px', color: '#8ba3bc' }}>Months to Payback</div>
-                                    </div>
-                                    <div style={{ textAlign: 'center' }}>
-                                        <div style={{ fontSize: '28px', fontWeight: '700', color: '#fff' }}>${businessCase.totalOngoing.toLocaleString()}</div>
-                                        <div style={{ fontSize: '12px', color: '#8ba3bc' }}>Annual Ongoing Benefit</div>
-                                    </div>
-                                    <div style={{ textAlign: 'center' }}>
-                                        <div style={{ fontSize: '28px', fontWeight: '700', color: '#38bdf8' }}>{Math.round((businessCase.totalOngoing / currentSegment.avgMonthlyBill / 12) * 100)}%</div>
-                                        <div style={{ fontSize: '12px', color: '#8ba3bc' }}>Bill Reduction</div>
-                                    </div>
+                                <div style={{ ...autoGrid(150), padding: '20px', background: 'rgba(74, 222, 128, 0.1)', borderRadius: '16px', border: '1px solid rgba(74, 222, 128, 0.2)' }}>
+                                    <Stat value={formatPayback(expected.paybackMonths)} label="Payback" color={C.green} />
+                                    <Stat value={money(expected.npv)} label="10-year NPV" color="#fff" />
+                                    <Stat value={`${((expected.demandSavings + expected.energySavings) / annualBill * 100).toFixed(1)}%`} label="Bill reduction" color={C.blue} />
+                                    <Stat value={`${(expected.incentive / annualBill * 100).toFixed(1)}%`} label="Incentives vs. annual bill" color={C.amber} />
                                 </div>
                             </div>
                         )}
 
                         {activeTab === 'operations' && (
-                            <div style={{
-                                background: 'rgba(255, 255, 255, 0.03)',
-                                borderRadius: '24px',
-                                border: '1px solid rgba(255, 255, 255, 0.08)',
-                                padding: '28px'
-                            }}>
-                                <div style={{ marginBottom: '24px' }}>
-                                    <h2 style={{ fontSize: '20px', fontWeight: '600', margin: '0 0 8px 0', color: '#fff' }}>
-                                        ⚙️ Operational Impact Scenarios
-                                    </h2>
-                                    <p style={{ fontSize: '14px', color: '#6b8299', margin: 0 }}>
-                                        What happens during a {eventDuration}-hour DR event? Understanding impacts helps stakeholders prepare.
-                                    </p>
-                                </div>
+                            <div style={panel}>
+                                <SectionHeader
+                                    title="⚙️ Operational Impact Scenarios"
+                                    desc={`What happens during a ${eventDuration}-hour ${season} DR event? Understanding impacts helps stakeholders prepare.`}
+                                />
 
-                                <div style={{
-                                    padding: '20px',
-                                    background: 'rgba(56, 189, 248, 0.1)',
-                                    borderRadius: '16px',
-                                    border: '1px solid rgba(56, 189, 248, 0.2)',
-                                    marginBottom: '24px'
-                                }}>
+                                <div style={{ padding: '20px', background: 'rgba(56, 189, 248, 0.1)', borderRadius: '16px', border: '1px solid rgba(56, 189, 248, 0.2)', marginBottom: '24px' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
                                         <span style={{ fontSize: '24px' }}>📋</span>
                                         <span style={{ fontSize: '16px', fontWeight: '600', color: '#fff' }}>Event Scenario: {eventDuration}-Hour Peak Reduction</span>
                                     </div>
-                                    <div style={{ fontSize: '14px', color: '#8ba3bc' }}>
-                                        <strong style={{ color: '#38bdf8' }}>Curtailment Target:</strong> {curtailableKW} kW ({Math.round(curtailableKW / currentSegment.peakDemand * 100)}% of peak demand) &nbsp;|&nbsp;
-                                        <strong style={{ color: '#38bdf8' }}>Event Window:</strong> 2:00 PM - {2 + eventDuration > 12 ? (2 + eventDuration - 12) + ':00 PM' : (14 + eventDuration) + ':00'}
+                                    <div style={{ fontSize: '14px', color: C.sub, lineHeight: 1.6 }}>
+                                        <strong style={{ color: C.blue }}>Expected reduction:</strong> {num(day.perfKW || expected.d.perfKW)} kW average ({peakDemand ? Math.round((expected.d.perfKW / peakDemand) * 100) : 0}% of peak demand) &nbsp;|&nbsp;
+                                        <strong style={{ color: C.blue }}>Event window:</strong> {formatWindow(start, eventDuration)} &nbsp;|&nbsp;
+                                        <strong style={{ color: C.blue }}>Restart:</strong> {recovery.label}
                                     </div>
                                 </div>
 
                                 <div style={{ display: 'grid', gap: '16px', marginBottom: '24px' }}>
-                                    {getOperationalImpacts().map((impact, i) => (
-                                        <div
-                                            key={i}
-                                            style={{
-                                                padding: '20px',
-                                                borderRadius: '16px',
-                                                border: '1px solid rgba(255,255,255,0.08)',
-                                                background: 'rgba(255,255,255,0.02)'
-                                            }}
-                                        >
-                                            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px' }}>
+                                    {getImpacts().map((impact, i) => (
+                                        <div key={i} style={{ padding: '20px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.02)' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', marginBottom: '12px' }}>
+                                                <div style={{ fontSize: '16px', fontWeight: '600', color: '#fff' }}>{impact.load}</div>
                                                 <div style={{
-                                                    padding: '8px 12px',
-                                                    borderRadius: '8px',
+                                                    padding: '6px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: '500',
                                                     background: impact.severity === 'low' ? 'rgba(74, 222, 128, 0.2)' : 'rgba(251, 191, 36, 0.2)',
-                                                    color: impact.severity === 'low' ? '#4ade80' : '#fbbf24',
-                                                    fontSize: '12px',
-                                                    fontWeight: '500'
+                                                    color: impact.severity === 'low' ? C.green : C.amber
                                                 }}>
                                                     {impact.severity === 'low' ? 'Low Impact' : 'Moderate Impact'}
                                                 </div>
                                             </div>
-                                            <div style={{ marginTop: '12px' }}>
-                                                <div style={{ fontSize: '16px', fontWeight: '600', color: '#fff', marginBottom: '8px' }}>
-                                                    {impact.load}
+                                            <div style={{ ...autoGrid(200), fontSize: '14px' }}>
+                                                <div>
+                                                    <div style={{ color: C.muted, marginBottom: '4px' }}>During Event</div>
+                                                    <div style={{ color: C.sub }}>{impact.impact}</div>
                                                 </div>
-                                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', fontSize: '14px' }}>
-                                                    <div>
-                                                        <div style={{ color: '#6b8299', marginBottom: '4px' }}>During Event</div>
-                                                        <div style={{ color: '#8ba3bc' }}>{impact.impact}</div>
-                                                    </div>
-                                                    <div>
-                                                        <div style={{ color: '#6b8299', marginBottom: '4px' }}>Mitigation Strategy</div>
-                                                        <div style={{ color: '#4ade80' }}>{impact.mitigation}</div>
-                                                    </div>
+                                                <div>
+                                                    <div style={{ color: C.muted, marginBottom: '4px' }}>Mitigation Strategy</div>
+                                                    <div style={{ color: C.green }}>{impact.mitigation}</div>
                                                 </div>
                                             </div>
                                         </div>
                                     ))}
                                 </div>
 
-                                <div style={{
-                                    padding: '24px',
-                                    borderRadius: '16px',
-                                    background: 'rgba(0,0,0,0.2)'
-                                }}>
-                                    <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#fff', marginBottom: '16px' }}>
-                                        Stakeholder Communication Guide
-                                    </h4>
-                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '16px' }}>
+                                <div style={subPanel}>
+                                    <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#fff', marginBottom: '16px' }}>Stakeholder Communication Guide</h4>
+                                    <div style={autoGrid(250)}>
                                         <div>
-                                            <div style={{ fontSize: '14px', fontWeight: '600', color: '#38bdf8', marginBottom: '8px' }}>👤 Facility Manager</div>
-                                            <div style={{ fontSize: '13px', color: '#8ba3bc', lineHeight: '1.5' }}>
-                                                Pre-event checklist, real-time monitoring dashboard, override procedures for critical situations.
-                                            </div>
+                                            <div style={{ fontSize: '14px', fontWeight: '600', color: C.blue, marginBottom: '8px' }}>👤 Facility Manager</div>
+                                            <div style={{ fontSize: '13px', color: C.sub, lineHeight: '1.5' }}>Pre-event checklist, real-time monitoring dashboard, override procedures for critical situations.</div>
                                         </div>
                                         <div>
-                                            <div style={{ fontSize: '14px', fontWeight: '600', color: '#4ade80', marginBottom: '8px' }}>💼 CFO / Finance</div>
-                                            <div style={{ fontSize: '13px', color: '#8ba3bc', lineHeight: '1.5' }}>
-                                                Monthly incentive reports, demand charge analysis, ROI tracking against projections.
-                                            </div>
+                                            <div style={{ fontSize: '14px', fontWeight: '600', color: C.green, marginBottom: '8px' }}>💼 CFO / Finance</div>
+                                            <div style={{ fontSize: '13px', color: C.sub, lineHeight: '1.5' }}>Monthly incentive reports, demand charge analysis, ROI tracking against projections.</div>
                                         </div>
                                         <div>
-                                            <div style={{ fontSize: '14px', fontWeight: '600', color: '#fbbf24', marginBottom: '8px' }}>⚙️ Operations</div>
-                                            <div style={{ fontSize: '13px', color: '#8ba3bc', lineHeight: '1.5' }}>
-                                                Production scheduling guidance, pre-event preparation SOP, post-event recovery procedures.
-                                            </div>
+                                            <div style={{ fontSize: '14px', fontWeight: '600', color: C.amber, marginBottom: '8px' }}>⚙️ Operations</div>
+                                            <div style={{ fontSize: '13px', color: C.sub, lineHeight: '1.5' }}>Production scheduling guidance, pre-event preparation SOP, post-event recovery procedures.</div>
                                         </div>
                                     </div>
                                 </div>
 
-                                <div style={{
-                                    marginTop: '24px',
-                                    padding: '16px',
-                                    borderRadius: '12px',
-                                    background: 'rgba(74, 222, 128, 0.1)',
-                                    border: '1px solid rgba(74, 222, 128, 0.2)'
-                                }}>
-                                    <p style={{ fontSize: '13px', color: '#8ba3bc', margin: 0 }}>
-                                        💡 <strong style={{ color: '#4ade80' }}>Auto-DR Recommendation:</strong> Automated demand response (OpenADR) reduces operational burden by automatically adjusting loads based on pre-configured rules. No manual intervention required during events.
-                                    </p>
+                                <div style={callout(C.green)}>
+                                    💡 <strong style={{ color: C.green }}>Auto-DR Recommendation:</strong> Automated demand response (OpenADR) reduces operational burden by automatically adjusting loads based on pre-configured rules. No manual intervention required during events.
                                 </div>
                             </div>
                         )}
 
-                        <footer style={{
-                            marginTop: '40px',
-                            textAlign: 'center',
-                            paddingTop: '24px',
-                            borderTop: '1px solid rgba(255,255,255,0.06)'
-                        }}>
-                            <p style={{ fontSize: '13px', color: '#4a6382' }}>
+                        {activeTab === 'grid' && (
+                            <div style={panel}>
+                                <SectionHeader
+                                    title="🌎 Grid & Carbon Impact"
+                                    desc="What your flexibility is worth to the grid and to your sustainability reporting."
+                                />
+
+                                <div style={{ ...autoGrid(200), marginBottom: '24px' }}>
+                                    <MetricCard label="PEAK CAPACITY YOU PROVIDE" value={`${num(expected.d.perfKW)} kW`} sub="Average reduction per event" color={C.green} />
+                                    <MetricCard label="PEAK ENERGY AVOIDED" value={`${annualEventMWh.toFixed(1)} MWh`} sub={`per year · ${expected.events} events`} color={C.blue} />
+                                    <MetricCard label="EMISSIONS AVOIDED" value={`${Math.max(0, tonsAvoided).toFixed(1)} t CO₂e`} sub="per year, net of shifted energy" color={C.purple} />
+                                </div>
+
+                                <div style={subPanel}>
+                                    <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#fff', marginBottom: '6px' }}>PSE needs about 4x more demand response by 2030</h4>
+                                    <p style={{ fontSize: '13px', color: C.muted, marginBottom: '16px', lineHeight: 1.5 }}>
+                                        A 2024 state law requires PSE to plan for load flexibility equal to 10% of its peak in both winter and summer. PSE estimates that means about {DR_NEED_2030_MW} MW of year-round demand response by 2030. It has {DR_CURRENT_MW} MW today.
+                                    </p>
+                                    <div style={{ position: 'relative', height: '28px', borderRadius: '8px', background: 'rgba(255,255,255,0.06)', overflow: 'hidden', marginBottom: '8px' }}>
+                                        <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${(DR_CURRENT_MW / DR_NEED_2030_MW) * 100}%`, background: 'rgba(56, 189, 248, 0.5)' }} />
+                                        <div style={{ position: 'absolute', left: `${(DR_CURRENT_MW / DR_NEED_2030_MW) * 100}%`, top: 0, bottom: 0, width: `${Math.min(100 - (DR_CURRENT_MW / DR_NEED_2030_MW) * 100, (portfolioMW / DR_NEED_2030_MW) * 100)}%`, background: 'linear-gradient(90deg, #4ade80, #22c55e)', transition: 'width 0.3s ease' }} />
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', fontSize: '12px', color: C.muted, marginBottom: '20px' }}>
+                                        <span><span style={{ color: C.blue }}>■</span> Today: {DR_CURRENT_MW} MW</span>
+                                        <span><span style={{ color: C.green }}>■</span> Sites like this one: {portfolioMW.toFixed(1)} MW</span>
+                                        <span>2030 need: ~{DR_NEED_2030_MW} MW</span>
+                                    </div>
+                                    <Slider
+                                        label="Similar sites enrolled across PSE's territory"
+                                        display={`${sitesEnrolled} sites`}
+                                        value={sitesEnrolled} min={10} max={500} step={10}
+                                        onChange={setSitesEnrolled}
+                                        hint={`${portfolioMW.toFixed(1)} MW would close ${Math.round(Math.min(1, portfolioMW / (DR_NEED_2030_MW - DR_CURRENT_MW)) * 100)}% of the ${DR_NEED_2030_MW - DR_CURRENT_MW} MW gap. Commercial and industrial customers make up about 55% of PSE's peak demand.`}
+                                    />
+                                </div>
+
+                                <div style={subPanel}>
+                                    <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#fff', marginBottom: '6px' }}>Why winter events? PSE peaks in winter, every year</h4>
+                                    <p style={{ fontSize: '13px', color: C.muted, marginBottom: '16px' }}>
+                                        System peak demand in MW, 2019–2025. The winter peak is higher every year.
+                                    </p>
+                                    <div style={{ display: 'flex', alignItems: 'flex-end', gap: '10px', height: '140px' }}>
+                                        {PEAK_HISTORY.map(([year, w, s]) => (
+                                            <div key={year} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', height: '100%', justifyContent: 'flex-end' }}>
+                                                <div style={{ display: 'flex', alignItems: 'flex-end', gap: '3px', width: '100%', height: '110px' }}>
+                                                    <div title={`${year} winter peak: ${num(w)} MW`} style={{ flex: 1, height: `${(w / 5000) * 110}px`, borderRadius: '3px 3px 0 0', background: 'linear-gradient(180deg, #38bdf8, rgba(56, 189, 248, 0.5))' }} />
+                                                    <div title={`${year} summer peak: ${num(s)} MW`} style={{ flex: 1, height: `${(s / 5000) * 110}px`, borderRadius: '3px 3px 0 0', background: 'linear-gradient(180deg, #fbbf24, rgba(251, 191, 36, 0.5))' }} />
+                                                </div>
+                                                <span style={{ fontSize: '10px', color: C.muted }}>{year}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', fontSize: '12px', color: C.sub, marginTop: '12px' }}>
+                                        <span><span style={{ color: C.blue }}>■</span> Winter</span>
+                                        <span><span style={{ color: C.amber }}>■</span> Summer</span>
+                                    </div>
+                                    <p style={{ fontSize: '13px', color: C.sub, marginTop: '12px', lineHeight: 1.5 }}>
+                                        The 2024 winter peak hit {num(PEAK_HISTORY[5][1])} MW against a {num(PEAK_HISTORY[5][2])} MW summer peak. Winter peaks fall on days below 30°F, typically 7–10 AM and/or 5–10 PM, and last 4–6 hours.
+                                    </p>
+                                </div>
+
+                                <div style={{ marginBottom: '16px' }}>
+                                    <div style={callout(C.green)}>
+                                        <strong style={{ color: C.green }}>Washington's clean energy path</strong><br />
+                                        The Clean Energy Transformation Act (CETA, 2019) required utilities to remove coal-fired power from their supply by the end of 2025. By 2030, retail electricity must be greenhouse-gas neutral, with up to 20% met through alternative compliance. By 2045, it must be 100% free of greenhouse-gas emissions. PSE's Clean Energy Implementation Plan set a demand response target of 86 MW by 2025, up from its original 23.7 MW.
+                                    </div>
+                                </div>
+                                <p style={{ fontSize: '11px', color: C.muted, lineHeight: 1.5 }}>
+                                    Emissions use illustrative marginal factors: {PEAK_EF} t CO₂/MWh for peak hours (gas peaking units) and {OFFPEAK_EF} t CO₂/MWh for the hours energy shifts into. Replace them with hourly marginal emissions data for reporting.
+                                </p>
+                            </div>
+                        )}
+
+                        {activeTab === 'next' && (
+                            <div style={panel}>
+                                <SectionHeader
+                                    title="✅ Next Steps: Enrollment Readiness"
+                                    desc="What it takes to go from interested to enrolled."
+                                />
+
+                                <div style={subPanel}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '12px', flexWrap: 'wrap' }}>
+                                        <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#fff' }}>Readiness checklist</h4>
+                                        <span style={{ fontSize: '14px', fontWeight: '600', color: readiness === 100 ? C.green : readiness >= 50 ? C.blue : C.amber }}>{readiness}% ready</span>
+                                    </div>
+                                    <div style={{ height: '8px', borderRadius: '4px', background: 'rgba(255,255,255,0.08)', marginBottom: '20px', overflow: 'hidden' }}>
+                                        <div style={{ width: `${readiness}%`, height: '100%', background: 'linear-gradient(90deg, #4ade80, #38bdf8)', transition: 'width 0.3s ease' }} />
+                                    </div>
+                                    <div style={{ display: 'grid', gap: '12px' }}>
+                                        {CHECKLIST.map((item) => (
+                                            <label key={item.id} style={{ display: 'flex', gap: '12px', alignItems: 'flex-start', cursor: 'pointer' }}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={!!checklist[item.id]}
+                                                    onChange={(e) => setChecklist((c) => ({ ...c, [item.id]: e.target.checked }))}
+                                                />
+                                                <span>
+                                                    <span style={{ fontSize: '14px', color: '#fff' }}>{item.label}</span><br />
+                                                    <span style={{ fontSize: '12px', color: C.muted }}>{item.why}</span>
+                                                </span>
+                                            </label>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#fff', marginBottom: '12px' }}>Choose how you'll respond</h4>
+                                <div style={{ ...autoGrid(260), marginBottom: '24px' }}>
+                                    {[
+                                        {
+                                            key: 'manual', title: '📋 Manual energy-reduction plan', points: [
+                                                'No cost: PSE and Enel build your plan and support enrollment',
+                                                'PSE notifies you by text, email, or phone; your staff carry out the plan',
+                                                'Many sites simply shift energy-heavy processes by a few hours',
+                                                'Best for getting started or sites with on-site operators'
+                                            ]
+                                        },
+                                        {
+                                            key: 'automated', title: '⚡ Automated controls', points: [
+                                                'Loads shed automatically through your BMS or controls when an event starts',
+                                                `You fund controls (about ${money(curtailableKW * controlsCostPerKW)} at an illustrative $${controlsCostPerKW}/kW)`,
+                                                'More consistent performance, which protects your seasonal earnings',
+                                                'Best for lean teams, frequent events, or multi-site portfolios'
+                                            ]
+                                        }
+                                    ].map((p) => {
+                                        const selected = enrollPath === p.key;
+                                        return (
+                                            <div key={p.key} style={{
+                                                padding: '20px', borderRadius: '16px',
+                                                border: `2px solid ${selected ? C.green : 'rgba(255,255,255,0.08)'}`,
+                                                background: selected ? 'rgba(74, 222, 128, 0.08)' : 'rgba(255,255,255,0.02)'
+                                            }}>
+                                                <div style={{ fontSize: '16px', fontWeight: '600', color: '#fff', marginBottom: '12px' }}>{p.title}</div>
+                                                <ul style={{ paddingLeft: '18px', fontSize: '13px', color: C.sub, lineHeight: 1.7, marginBottom: '16px' }}>
+                                                    {p.points.map((pt) => <li key={pt}>{pt}</li>)}
+                                                </ul>
+                                                <button
+                                                    onClick={() => { setEnrollPath(p.key); setActiveTab('business'); }}
+                                                    style={{ padding: '8px 14px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.05)', color: selected ? C.green : C.sub, cursor: 'pointer', fontSize: '13px', fontFamily: 'inherit' }}
+                                                >
+                                                    {selected ? '✓ Modeled in business case →' : 'Model this path →'}
+                                                </button>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+
+                                <div style={subPanel}>
+                                    <h4 style={{ fontSize: '16px', fontWeight: '600', color: '#fff', marginBottom: '16px' }}>From sign-up to first payment</h4>
+                                    <div style={autoGrid(180)}>
+                                        {[
+                                            ['1', 'Apply', 'Apply online or email FlexCI@pse.com. You need to be a PSE business electric customer on an eligible rate schedule.'],
+                                            ['2', 'Assessment', 'PSE and Enel review your historical usage to find where you can shed load, and estimate your incentive.'],
+                                            ['3', 'Energy-reduction plan', 'A custom plan: HVAC setpoints, lighting, production changes. Metering is installed in some cases.'],
+                                            ['4', 'Enroll & commit', 'Commit a kW reduction for the season. PSE handles measurement, verification, and payments.'],
+                                            ['5', 'Events & payment', 'Winter (Nov–Mar) and summer (May–Sep) events, with 24/7 support. Paid each season.']
+                                        ].map(([n, title, desc]) => (
+                                            <div key={n}>
+                                                <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'rgba(74, 222, 128, 0.2)', color: C.green, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', fontWeight: '600', marginBottom: '8px' }}>{n}</div>
+                                                <div style={{ fontSize: '14px', fontWeight: '600', color: '#fff', marginBottom: '4px' }}>{title}</div>
+                                                <div style={{ fontSize: '12px', color: C.muted, lineHeight: 1.5 }}>{desc}</div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <div style={{ textAlign: 'center' }}>
+                                    <button
+                                        onClick={() => setCtaClicked(true)}
+                                        style={{
+                                            padding: '14px 28px', borderRadius: '12px', border: 'none',
+                                            background: 'linear-gradient(135deg, #4ade80, #22c55e)', color: '#0a1628',
+                                            fontSize: '15px', fontWeight: '700', cursor: 'pointer', fontFamily: 'inherit',
+                                            boxShadow: '0 0 24px rgba(74, 222, 128, 0.3)'
+                                        }}
+                                    >
+                                        Request a facility assessment
+                                    </button>
+                                    {ctaClicked && (
+                                        <div style={{ ...callout(C.green), marginTop: '16px', textAlign: 'left' }}>
+                                            In a live product, this sends your profile to a C&I account manager: {seg.name}, {num(peakDemand)} kW peak, {num(curtailableKW)} kW curtailable, {program.name}, {enrollPath === 'manual' ? 'manual response' : 'automated controls'}, {readiness}% ready. Expected annual net benefit: {money(expected.annualNet)}.
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        <section id="assumptions" style={{ ...panel, marginTop: '8px', scrollMarginTop: '16px' }}>
+                            <SectionHeader
+                                title="🔍 What's sourced vs. assumed"
+                                desc={'Every number here falls into one of three groups. Values marked "assumed" in the simulator are in the middle column. The last column can only be answered once a customer enrolls with PSE.'}
+                            />
+                            <div style={autoGrid(260)}>
+                                <div style={{ padding: '20px', borderRadius: '16px', background: 'rgba(74, 222, 128, 0.06)', border: '1px solid rgba(74, 222, 128, 0.25)' }}>
+                                    <div style={{ fontSize: '12px', fontWeight: '600', color: C.green, letterSpacing: '0.3px', marginBottom: '12px' }}>✓ CONFIRMED FROM PSE & STATE SOURCES</div>
+                                    <ul style={{ paddingLeft: '18px', fontSize: '13px', color: C.sub, lineHeight: 1.6, display: 'grid', gap: '6px' }}>
+                                        {ASSUMPTIONS.confirmed.map((t) => <li key={t}>{t}</li>)}
+                                    </ul>
+                                </div>
+                                <div style={{ padding: '20px', borderRadius: '16px', background: 'rgba(251, 191, 36, 0.06)', border: '1px solid rgba(251, 191, 36, 0.25)' }}>
+                                    <div style={{ fontSize: '12px', fontWeight: '600', color: C.amber, letterSpacing: '0.3px', marginBottom: '12px' }}>≈ MODELED (ASSUMED)</div>
+                                    <ul style={{ paddingLeft: '18px', fontSize: '13px', color: C.sub, lineHeight: 1.5, display: 'grid', gap: '10px' }}>
+                                        {ASSUMPTIONS.modeled.map(([what, why]) => (
+                                            <li key={what}>
+                                                <span style={{ color: '#fff' }}>{what}</span><br />
+                                                <span style={{ fontSize: '12px', color: C.muted }}>{why}</span>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                                <div style={{ padding: '20px', borderRadius: '16px', background: 'rgba(248, 113, 113, 0.06)', border: '1px solid rgba(248, 113, 113, 0.25)' }}>
+                                    <div style={{ fontSize: '12px', fontWeight: '600', color: C.red, letterSpacing: '0.3px', marginBottom: '12px' }}>? UNKNOWN UNTIL ENROLLMENT</div>
+                                    <ul style={{ paddingLeft: '18px', fontSize: '13px', color: C.sub, lineHeight: 1.6, display: 'grid', gap: '6px' }}>
+                                        {ASSUMPTIONS.unknown.map((t) => <li key={t}>{t}</li>)}
+                                    </ul>
+                                    <p style={{ fontSize: '12px', color: C.muted, marginTop: '14px', lineHeight: 1.5 }}>
+                                        PSE's public pages don't answer these, and PSE may change incentives at any time. A facility assessment with PSE would settle them for a real site.
+                                    </p>
+                                </div>
+                            </div>
+                        </section>
+
+                        <footer style={{ marginTop: '40px', textAlign: 'center', paddingTop: '24px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                            <p style={{ fontSize: '13px', color: '#4a6382', marginBottom: '6px' }}>
                                 Built by Nora • Demonstrating product thinking for PSE's Product Development Manager, C&I Demand Response role
+                            </p>
+                            <p style={{ fontSize: '11px', color: '#4a6382', marginBottom: '6px', lineHeight: 1.5 }}>
+                                Program terms, peak data, and Schedule 26 rates come from the PSE and state sources below, checked October 2026; PSE may change incentives at any time. Load shapes, controls costs, and emissions factors are illustrative.
+                            </p>
+                            <p style={{ fontSize: '11px', lineHeight: 1.8 }}>
+                                {SOURCES.map(([label, url], i) => (
+                                    <span key={url}>
+                                        {i > 0 && <span style={{ color: '#4a6382' }}> · </span>}
+                                        <a href={url} target="_blank" rel="noopener noreferrer" style={{ color: '#6b8299' }}>{label}</a>
+                                    </span>
+                                ))}
                             </p>
                         </footer>
                     </div>
